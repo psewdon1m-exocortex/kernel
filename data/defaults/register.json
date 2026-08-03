@@ -1,0 +1,57 @@
+[
+  {
+    "key": "repositories.kernel.url",
+    "value": "https://github.com/psewdon1m/exocortex-kernel",
+    "description": "Canonical source repository containing Kernel"
+  },
+  {
+    "key": "repositories.perimetr.url",
+    "value": "https://github.com/psewdon1m/exocortex-perimetr",
+    "description": "Canonical source repository containing Perimetr"
+  },
+  {
+    "key": "repositories.agent.url",
+    "value": "https://github.com/psewdon1m/exocortex-agent",
+    "description": "Canonical source repository containing Agent Node"
+  },
+  {
+    "key": "repositories.pod.url",
+    "value": "https://github.com/psewdon1m/exocortex-pod",
+    "description": "Canonical Pod release repository; Perimetr derives the signed pod-current manifest from this URL"
+  },
+  {
+    "key": "repositories.sindri.url",
+    "value": "https://github.com/psewdon1m/exocortex-sindri",
+    "description": "Canonical source repository containing Sindri"
+  },
+  {
+    "key": "repositories.updater.url",
+    "value": "https://github.com/psewdon1m/exocortex-updater",
+    "description": "Canonical source repository containing the local VPS updater"
+  },
+  {
+    "key": "services.kernel.sni",
+    "value": "kernel.example.com",
+    "description": "Canonical HTTPS hostname used by services when calling Kernel"
+  },
+  {
+    "key": "services.kernel.port",
+    "value": "443",
+    "description": "Client-facing HTTPS port used by services when calling Kernel; the private application listener remains local to the VPS"
+  },
+  {
+    "key": "services.perimetr.sni",
+    "value": "perimetr.example.com",
+    "description": "Canonical HTTPS hostname used by Agent Nodes and Pods when calling Perimetr"
+  },
+  {
+    "key": "services.perimetr.port",
+    "value": "443",
+    "description": "Client-facing HTTPS port used by Agent Nodes and Pods; the private application listener remains local to the VPS"
+  },
+  {
+    "key": "intervals.kernel.refresh_sec",
+    "value": "60",
+    "description": "Shared Register refresh interval for long-running services"
+  }
+]

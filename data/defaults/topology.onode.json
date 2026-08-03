@@ -1,0 +1,71 @@
+{
+  "format": "open-node-project",
+  "schemaVersion": "1.0.0",
+  "createdWith": "0.1.0",
+  "metadata": {
+    "id": "project-exocortex-topology",
+    "name": "Exocortex Topology",
+    "description": "Custom conceptual architecture map",
+    "createdAt": "2026-07-25T00:00:00.000Z",
+    "updatedAt": "2026-07-25T00:00:00.000Z",
+    "tags": ["exocortex", "topology"]
+  },
+  "dependencies": [],
+  "settings": {
+    "theme": "dark",
+    "grid": {
+      "enabled": true,
+      "step": 24,
+      "majorEvery": 10,
+      "color": "#75809a",
+      "opacity": 0.16,
+      "snapping": false
+    },
+    "minimapVisible": true,
+    "timelineVisible": false,
+    "dashboardVisible": false,
+    "reducedMotion": false,
+    "previewQuality": "medium",
+    "connectionRouting": "bezier",
+    "connectionsVisible": true,
+    "portsVisible": true,
+    "groupsVisible": true,
+    "annotationsVisible": true,
+    "recentLibraryItems": [],
+    "panelLayout": {
+      "library": {
+        "position": { "x": 70, "y": 64 },
+        "size": { "width": 620, "height": 430 }
+      }
+    }
+  },
+  "execution": {
+    "mode": "manual",
+    "concurrency": 1,
+    "preferredBackend": "main",
+    "cacheEnabled": false,
+    "nodeTimeoutMs": 1000,
+    "continuousQueueSize": 1,
+    "backpressure": "drop-oldest"
+  },
+  "timeline": {
+    "enabled": false,
+    "fps": 30,
+    "durationSeconds": 60,
+    "startTime": 0,
+    "endTime": 60,
+    "loop": false,
+    "playbackRate": 1,
+    "timeUnit": "seconds",
+    "currentTime": 0
+  },
+  "viewport": { "x": 0, "y": 0, "zoom": 1 },
+  "background": { "type": "solid", "color": "#111318" },
+  "nodes": [],
+  "containers": [],
+  "groups": [],
+  "connections": [],
+  "annotations": [],
+  "presets": [],
+  "assets": []
+}

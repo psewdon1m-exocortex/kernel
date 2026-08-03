@@ -1,0 +1,51 @@
+{
+  "name": "exocortex-kernel",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "vendor/open-node/packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n api,ui -c blue,cyan \"node --watch server/index.js\" \"vite --host 0.0.0.0\"",
+    "build:vendor": "npm run build -w @open-node/model && npm run build -w @open-node/type-system && npm run build -w @open-node/commands && npm run build -w @open-node/scheduler && npm run build -w @open-node/sdk && npm run build -w @open-node/timeline && npm run build -w @open-node/assets && npm run build -w @open-node/telemetry && npm run build -w @open-node/core-nodes && npm run build -w @open-node/io && npm run build -w @open-node/engine && npm run build -w @open-node/machine-api && npm run build -w @open-node/ui && npm run build -w @open-node/embed",
+    "build": "npm run build:vendor && tsc --noEmit && vite build",
+    "start": "node server/index.js",
+    "test": "node --test tests/*.test.js",
+    "test:browser": "playwright test",
+    "check": "npm run test && npm run build && npm run test:browser"
+  },
+  "dependencies": {
+    "@open-node/embed": "0.1.0",
+    "@open-node/io": "0.1.0",
+    "@open-node/model": "0.1.0",
+    "@open-node/sdk": "0.1.0",
+    "cookie-parser": "^1.4.7",
+    "express": "^5.1.0",
+    "fflate": "^0.8.3",
+    "multer": "^2.0.2",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "@types/express": "^5.0.3",
+    "@types/multer": "^2.0.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "concurrently": "^9.2.1",
+    "jsdom": "^28.1.0",
+    "supertest": "^7.1.4",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.0",
+    "vite": "^7.1.0",
+    "vitest": "^4.1.10"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

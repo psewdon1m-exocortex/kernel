@@ -1,0 +1,52 @@
+name: kernel
+
+services:
+  kernel:
+    image: "${KERNEL_IMAGE:?Set KERNEL_IMAGE to the published immutable image in .env}"
+    container_name: exocortex-kernel
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${KERNEL_LISTEN_PORT:-18180}:${KERNEL_LISTEN_PORT:-18180}"
+    environment:
+      KERNEL_LISTEN_PORT: "${KERNEL_LISTEN_PORT:-18180}"
+      KERNEL_DATA_DIR: /app/data
+      KERNEL_DEFAULTS_DIR: /app/defaults
+      KERNEL_ADMIN_USERNAME: "${KERNEL_ADMIN_USERNAME:?Set KERNEL_ADMIN_USERNAME in .env}"
+      KERNEL_ADMIN_PASSWORD: "${KERNEL_ADMIN_PASSWORD:?Set KERNEL_ADMIN_PASSWORD in .env}"
+      KERNEL_SESSION_SECRET: "${KERNEL_SESSION_SECRET:?Set KERNEL_SESSION_SECRET in .env}"
+      KERNEL_SERVICE_TOKEN: "${KERNEL_SERVICE_TOKEN:?Set KERNEL_SERVICE_TOKEN in .env}"
+      KERNEL_COOKIE_SECURE: "${KERNEL_COOKIE_SECURE:-true}"
+      KERNEL_TRUST_PROXY: "${KERNEL_TRUST_PROXY:-true}"
+      KERNEL_DISK_PATH: /
+      KERNEL_VERSION: "${KERNEL_VERSION:-0.1.0}"
+      KERNEL_AUDIT_MAX_ENTRIES: "${KERNEL_AUDIT_MAX_ENTRIES:-10000}"
+      KERNEL_AUDIT_RETENTION_DAYS: "${KERNEL_AUDIT_RETENTION_DAYS:-30}"
+      KERNEL_AUDIT_MAX_BYTES: "${KERNEL_AUDIT_MAX_BYTES:-67108864}"
+      KERNEL_UPDATE_CHECK_TIMEOUT_MS: "${KERNEL_UPDATE_CHECK_TIMEOUT_MS:-5000}"
+      UPDATER_SOCKET_PATH: /run/exocortex/updater.sock
+      UPDATER_HEAD_ID: "${UPDATER_HEAD_ID:-kernel}"
+      UPDATER_CONTROL_TOKEN: "${UPDATER_CONTROL_TOKEN:?Set UPDATER_CONTROL_TOKEN in .env}"
+    volumes:
+      - kernel-data:/app/data
+      - type: bind
+        source: "${UPDATER_SOCKET_DIR:-/run/exocortex}"
+        target: /run/exocortex
+    group_add:
+      - "${UPDATER_SOCKET_GID:?Set UPDATER_SOCKET_GID during VPS installation}"
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,noexec,nosuid,nodev
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  kernel-data:

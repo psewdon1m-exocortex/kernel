@@ -1,0 +1,15 @@
+{
+  "name": "@open-node/standalone-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "dev": "vite", "build": "vite build", "preview": "vite preview" },
+  "dependencies": {
+    "@open-node/core-nodes": "0.1.0",
+    "@open-node/embed": "0.1.0",
+    "@open-node/io": "0.1.0",
+    "@open-node/model": "0.1.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  }
+}

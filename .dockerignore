@@ -1,0 +1,15 @@
+node_modules
+dist
+data/kernel.sqlite*
+.env
+.env.*
+!.env.example
+playwright-report
+test-results
+coverage
+tests
+.tmp
+.docs
+vendor/open-node/node_modules
+vendor/open-node/**/dist
+.git

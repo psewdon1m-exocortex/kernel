@@ -1,0 +1,13 @@
+{
+  "name": "@open-node/ui",
+  "version": "0.1.0",
+  "type": "module",
+  "files": ["dist"],
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js", "require": "./dist/index.cjs", "default": "./dist/index.js" } },
+  "scripts": { "build": "tsup src/index.tsx --format esm,cjs --dts --clean --external react --external react-dom --inject-style" },
+  "peerDependencies": { "react": ">=19", "react-dom": ">=19" },
+  "dependencies": { "@open-node/assets": "0.1.0", "@open-node/commands": "0.1.0", "@open-node/engine": "0.1.0", "@open-node/model": "0.1.0", "@open-node/sdk": "0.1.0", "@open-node/telemetry": "0.1.0", "@open-node/timeline": "0.1.0", "@open-node/type-system": "0.1.0" }
+}

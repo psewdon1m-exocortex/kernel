@@ -1,0 +1,39 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": false,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@open-node/model": ["packages/model/src/index.ts"],
+      "@open-node/type-system": ["packages/type-system/src/index.ts"],
+      "@open-node/commands": ["packages/commands/src/index.ts"],
+      "@open-node/scheduler": ["packages/scheduler/src/index.ts"],
+      "@open-node/engine": ["packages/engine/src/index.ts"],
+      "@open-node/timeline": ["packages/timeline/src/index.ts"],
+      "@open-node/assets": ["packages/assets/src/index.ts"],
+      "@open-node/sdk": ["packages/sdk/src/index.ts"],
+      "@open-node/core-nodes": ["packages/core-nodes/src/index.ts"],
+      "@open-node/io": ["packages/io/src/index.ts"],
+      "@open-node/machine-api": ["packages/machine-api/src/index.ts"],
+      "@open-node/mcp-adapter": ["packages/mcp-adapter/src/index.ts"],
+      "@open-node/telemetry": ["packages/telemetry/src/index.ts"],
+      "@open-node/ui": ["packages/ui/src/index.tsx"],
+      "@open-node/embed": ["packages/embed/src/index.tsx"]
+    },
+    "types": ["node", "vite/client", "vitest/globals"]
+  },
+  "include": ["packages/**/*.ts", "packages/**/*.tsx", "apps/**/*.ts", "apps/**/*.tsx", "examples/**/*.ts", "examples/**/*.tsx", "tests/**/*.ts", "vite.config.ts"],
+  "exclude": ["node_modules", "dist", "coverage"]
+}

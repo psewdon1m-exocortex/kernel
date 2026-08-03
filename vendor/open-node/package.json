@@ -1,0 +1,41 @@
+{
+  "name": "open-node",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Open-source framework for embeddable node interfaces and executable graphs",
+  "license": "MIT",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=@open-node/standalone-web",
+    "build": "npm run typecheck && npm run build:workspaces",
+    "build:packages": "npm run build -w @open-node/model && npm run build -w @open-node/type-system && npm run build -w @open-node/commands && npm run build -w @open-node/scheduler && npm run build -w @open-node/sdk && npm run build -w @open-node/timeline && npm run build -w @open-node/assets && npm run build -w @open-node/telemetry && npm run build -w @open-node/core-nodes && npm run build -w @open-node/io && npm run build -w @open-node/engine && npm run build -w @open-node/machine-api && npm run build -w @open-node/mcp-adapter && npm run build -w @open-node/ui && npm run build -w @open-node/embed",
+    "build:app": "npm run build -w @open-node/standalone-web",
+    "build:workspaces": "npm run build:packages && npm run build:app",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "bench": "vitest bench",
+    "check": "npm run typecheck && npm run test && npm run build:workspaces"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "@types/node": "^24.10.0",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@vitejs/plugin-react": "^6.0.4",
+    "jsdom": "^28.0.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vite": "^8.1.5",
+    "vitest": "^4.1.10"
+  },
+  "overrides": {
+    "esbuild": "^0.28.1"
+  }
+}

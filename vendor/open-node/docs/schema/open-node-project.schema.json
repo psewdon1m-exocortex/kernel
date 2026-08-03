@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-node.dev/schema/open-node-project-1.0.0.json",
+  "title": "Open Node Project",
+  "type": "object",
+  "required": ["format", "schemaVersion", "createdWith", "metadata", "dependencies", "settings", "execution", "timeline", "viewport", "background", "nodes", "containers", "groups", "connections", "annotations", "presets", "assets"],
+  "properties": {
+    "format": { "const": "open-node-project" },
+    "schemaVersion": { "const": "1.0.0" },
+    "createdWith": { "type": "string" },
+    "metadata": { "type": "object", "required": ["id", "name", "createdAt", "updatedAt", "tags"] },
+    "dependencies": { "type": "array" },
+    "settings": {
+      "type": "object",
+      "required": ["theme", "grid", "minimapVisible", "timelineVisible", "dashboardVisible", "reducedMotion", "previewQuality", "connectionRouting"],
+      "properties": {
+        "theme": { "enum": ["light", "dark", "system"] },
+        "grid": {
+          "type": "object",
+          "required": ["enabled", "step", "majorEvery", "color", "opacity", "snapping"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "step": { "type": "number", "exclusiveMinimum": 0 },
+            "majorEvery": { "type": "integer", "minimum": 1 },
+            "color": { "type": "string" },
+            "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+            "snapping": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
+        "minimapVisible": { "type": "boolean" },
+        "timelineVisible": { "type": "boolean" },
+        "dashboardVisible": { "type": "boolean" },
+        "reducedMotion": { "type": "boolean" },
+        "previewQuality": { "enum": ["low", "medium", "high"] },
+        "connectionRouting": { "enum": ["straight", "bezier", "smooth-step", "orthogonal"] },
+        "connectionsVisible": { "type": "boolean" },
+        "portsVisible": { "type": "boolean" },
+        "groupsVisible": { "type": "boolean" },
+        "annotationsVisible": { "type": "boolean" },
+        "recentLibraryItems": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "type": "object",
+            "required": ["kind", "id"],
+            "properties": {
+              "kind": { "enum": ["node", "container"] },
+              "id": { "type": "string", "minLength": 1 }
+            },
+            "additionalProperties": false
+          }
+        },
+        "panelLayout": {
+          "type": "object",
+          "properties": {
+            "library": {
+              "type": "object",
+              "properties": {
+                "position": { "$ref": "#/$defs/point" },
+                "size": { "$ref": "#/$defs/size" }
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "execution": { "type": "object", "required": ["mode", "concurrency", "preferredBackend", "cacheEnabled"] },
+    "timeline": { "type": "object", "required": ["enabled", "fps", "durationSeconds", "startTime", "endTime", "loop", "playbackRate"] },
+    "viewport": { "$ref": "#/$defs/pointZoom" },
+    "background": { "type": "object", "required": ["type"] },
+    "nodes": { "type": "array", "items": { "type": "object", "required": ["id", "kind", "nodeTypeId", "nodeTypeVersion", "position", "size", "parameters", "ports"] } },
+    "containers": { "type": "array", "items": { "type": "object", "required": ["id", "kind", "name", "nodeIds", "inputPort", "outputPort"] } },
+    "groups": { "type": "array", "items": { "type": "object", "required": ["id", "kind", "position", "size", "memberNodeIds", "memberContainerIds"] } },
+    "connections": { "type": "array", "items": { "type": "object", "required": ["id", "kind", "source", "target", "routing"] } },
+    "annotations": { "type": "array", "items": { "type": "object", "required": ["id", "kind", "annotationType", "position", "size", "rotation", "color", "strokeWidth", "opacity"] } },
+    "presets": { "type": "array" },
+    "assets": { "type": "array" }
+  },
+  "$defs": {
+    "point": {
+      "type": "object",
+      "required": ["x", "y"],
+      "properties": { "x": { "type": "number" }, "y": { "type": "number" } }
+    },
+    "size": {
+      "type": "object",
+      "required": ["width", "height"],
+      "properties": { "width": { "type": "number", "exclusiveMinimum": 0 }, "height": { "type": "number", "exclusiveMinimum": 0 } }
+    },
+    "pointZoom": {
+      "type": "object",
+      "required": ["x", "y", "zoom"],
+      "properties": { "x": { "type": "number" }, "y": { "type": "number" }, "zoom": { "type": "number", "exclusiveMinimum": 0 } }
+    }
+  },
+  "additionalProperties": false
+}
