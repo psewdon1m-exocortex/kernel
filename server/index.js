@@ -25,7 +25,7 @@ const config = {
   trustProxy: process.env.KERNEL_TRUST_PROXY === "true",
   diskPath: process.env.KERNEL_DISK_PATH
     || (process.platform === "win32" ? path.parse(process.cwd()).root : "/"),
-  version: process.env.KERNEL_VERSION ?? "0.1.0",
+  version: process.env.KERNEL_VERSION ?? "0.1.1",
   auditMaxEntries: Number(process.env.KERNEL_AUDIT_MAX_ENTRIES ?? 10000),
   auditRetentionDays: Number(process.env.KERNEL_AUDIT_RETENTION_DAYS ?? 30),
   auditMaxBytes: Number(process.env.KERNEL_AUDIT_MAX_BYTES ?? 64 * 1024 * 1024),

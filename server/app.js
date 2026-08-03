@@ -224,7 +224,7 @@ export function createKernelApp(options) {
     cookieSecure = false,
     trustProxy = false,
     diskPath = process.platform === "win32" ? path.parse(process.cwd()).root : "/",
-    version = "0.1.0",
+    version = "0.1.1",
     auditMaxEntries = 10000,
     auditRetentionDays = 30,
     auditMaxBytes = 64 * 1024 * 1024,

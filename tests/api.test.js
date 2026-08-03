@@ -454,7 +454,7 @@ describe("Kernel API", () => {
 
     const update = await agent.post("/api/updater/check");
     assert.equal(update.status, 200);
-    assert.equal(update.body.installed_version, "0.1.0");
+    assert.equal(update.body.installed_version, "0.1.1");
     assert.equal(update.body.available_version, "0.2.0");
     const updaterStatus = await agent.get("/api/updater/status");
     assert.equal(updaterStatus.status, 200);
