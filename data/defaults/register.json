@@ -1,32 +1,32 @@
 [
   {
     "key": "repositories.kernel.url",
-    "value": "https://github.com/psewdon1m/exocortex-kernel",
+    "value": "https://github.com/psewdon1m-exocortex/kernel",
     "description": "Canonical source repository containing Kernel"
   },
   {
     "key": "repositories.perimetr.url",
-    "value": "https://github.com/psewdon1m/exocortex-perimetr",
+    "value": "https://github.com/psewdon1m-exocortex/perimetr",
     "description": "Canonical source repository containing Perimetr"
   },
   {
     "key": "repositories.agent.url",
-    "value": "https://github.com/psewdon1m/exocortex-agent",
+    "value": "https://github.com/psewdon1m-exocortex/agent",
     "description": "Canonical source repository containing Agent Node"
   },
   {
     "key": "repositories.pod.url",
-    "value": "https://github.com/psewdon1m/exocortex-pod",
+    "value": "https://github.com/psewdon1m-exocortex/pod",
     "description": "Canonical Pod release repository; Perimetr derives the signed pod-current manifest from this URL"
   },
   {
     "key": "repositories.sindri.url",
-    "value": "https://github.com/psewdon1m/exocortex-sindri",
+    "value": "https://github.com/psewdon1m/sindri",
     "description": "Canonical source repository containing Sindri"
   },
   {
     "key": "repositories.updater.url",
-    "value": "https://github.com/psewdon1m/exocortex-updater",
+    "value": "https://github.com/psewdon1m-exocortex/updater",
     "description": "Canonical source repository containing the local VPS updater"
   },
   {

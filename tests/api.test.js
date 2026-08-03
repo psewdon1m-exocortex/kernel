@@ -220,7 +220,7 @@ describe("Kernel API", () => {
     assert.equal(register.body.schema, "exocortex.register.snapshot.v1");
     assert.equal(
       register.body.values.repositories.agent.url,
-      "https://github.com/psewdon1m/exocortex-agent",
+      "https://github.com/psewdon1m-exocortex/agent",
     );
     assert.equal(register.body.values.services.kernel.sni, "kernel.example.com");
     assert.equal(register.body.values.services.kernel.port, "443");
@@ -471,7 +471,7 @@ describe("Kernel API", () => {
     const job = await agent.get("/api/updater/jobs/job-kernel-1");
     assert.equal(job.body.state, "COMPLETED");
     assert.equal(update.body.update_available, true);
-    assert.equal(update.body.repository_url, "https://github.com/psewdon1m/exocortex-kernel");
+    assert.equal(update.body.repository_url, "https://github.com/psewdon1m-exocortex/kernel");
 
     const backup = await agent.get("/api/backup");
     assert.equal(backup.status, 200);
