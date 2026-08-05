@@ -67,7 +67,7 @@ Kernel and Perimetr publish immutable OCI images and a signed service manifest:
 ```
 
 Production does not clone or build a repository. The updater verifies the
-manifest Sigstore bundle, compose checksum and exact OCI image digest.
+manifest identity, compose checksum and exact OCI image digest.
 
 ## Update flow
 

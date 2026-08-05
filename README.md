@@ -1,5 +1,25 @@
 # Exocortex Kernel
 
+## Production installation
+
+Prepare the latest stable release without starting it:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/psewdon1m-exocortex/kernel/main/bootstrap.sh | sudo sh
+```
+
+Edit only the `OPERATOR INPUT` section in `/opt/exocortex/kernel/.env`, then
+run:
+
+```bash
+sudo kernel-install
+```
+
+The bootstrap populates the release version and immutable image digest and
+generates the session, service and updater tokens. It never generates the
+operator username or password. Nginx, certificates, DNS and firewall policy
+are intentionally handled separately through Sindri.
+
 Пассивный registry-сервис для одного VPS:
 
 - Dashboard с CPU, RAM, Disk и system uptime;
@@ -147,7 +167,7 @@ Register обычно запрещает реальные секреты. Еди
 ## Обновления Kernel и Perimetr
 
 Production-обновление не должно клонировать и собирать весь репозиторий на VPS.
-Используется отдельный host-level updater, signed release manifest,
+Используется отдельный host-level updater, checksummed release manifest,
 предсобранный OCI image по digest, backup, health check и automatic rollback.
 Подробности: [WEB_SERVICE_UPDATE_ARCHITECTURE.md](WEB_SERVICE_UPDATE_ARCHITECTURE.md).
 

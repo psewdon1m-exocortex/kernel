@@ -1006,7 +1006,7 @@ export function SettingsPage({
         <ConfirmDialog
           title="INSTALL KERNEL UPDATE"
           message={`Install Kernel ${updateCheck.available_version}?`}
-          detail="A full backup will be downloaded first. The local updater will verify the signed release, preserve volumes, run health checks and automatically roll back on failure."
+          detail="A full backup will be downloaded first. The local updater will verify release checksums and the immutable image digest, preserve volumes, run health checks and automatically roll back on failure."
           confirmLabel="Download backup and install"
           pending={updatePending}
           onConfirm={() => void installUpdate()}

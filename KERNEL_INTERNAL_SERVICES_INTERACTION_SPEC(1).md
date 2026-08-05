@@ -39,7 +39,7 @@ document:
   the Pod.
 - Sindri never contacts Kernel and manages only its own release lifecycle.
 - Agent and Sindri repository coordinates used for self-update are stored in
-  their own signed release manifests.
+  their own checksummed release manifests.
 - `KERNEL_SERVICE_TOKEN` is the local bootstrap trust anchor. Kernel also
   publishes `services.kernel.service_token` for trusted internal services.
 
