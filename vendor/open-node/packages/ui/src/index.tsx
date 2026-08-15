@@ -136,7 +136,150 @@ const DEFAULT_GRID_COLOR = "#75809a";
 const ALT_TOOLBAR_HEIGHT = 46;
 const ALT_TOOLBAR_GAP = 8;
 const LIBRARY_MIN_WIDTH = 460;
+const BROWSER_DOCUMENT_TAG = "browser-document";
+const BROWSER_DOCUMENT_MAX_BYTES = 4 * 1024 * 1024;
+const BROWSER_DOCUMENT_ACCEPT = ".pdf,.md,.docx,.onode,.onode.json";
 let browserCapabilityCache: { cores: string; memory: string; gpu: string } | undefined;
+
+type BrowserDocumentKind = "pdf" | "markdown" | "docx" | "graph";
+
+interface BrowserDocumentPayload {
+  kind: BrowserDocumentKind;
+  dataBase64: string;
+}
+
+function isBrowserDocumentDefinition(definition?: NodeDefinition): boolean {
+  return definition?.tags?.includes(BROWSER_DOCUMENT_TAG) === true;
+}
+
+function browserDocumentDescriptor(file: File, bytes: Uint8Array): { kind: BrowserDocumentKind; mimeType: string; mediaType: OpenNodeProject["assets"][number]["mediaType"]; extension: string } {
+  const name = file.name.toLowerCase();
+  if (bytes.byteLength === 0) throw new Error("The selected file is empty");
+  if (name.endsWith(".pdf")) {
+    if (new TextDecoder("ascii").decode(bytes.subarray(0, 5)) !== "%PDF-") throw new Error("The selected .pdf file has no PDF signature");
+    return { kind: "pdf", mimeType: "application/pdf", mediaType: "document", extension: "pdf" };
+  }
+  if (name.endsWith(".md")) {
+    try {
+      const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+      if (text.includes("\0")) throw new Error("Markdown contains a null byte");
+    } catch {
+      throw new Error("Markdown must be valid UTF-8 text");
+    }
+    return { kind: "markdown", mimeType: "text/plain;charset=utf-8", mediaType: "text", extension: "md" };
+  }
+  if (name.endsWith(".docx")) {
+    if (!isZip(bytes) || !zipContains(bytes, "[Content_Types].xml") || !zipContains(bytes, "word/document.xml")) {
+      throw new Error("The selected .docx file is not a valid Word document package");
+    }
+    return { kind: "docx", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", mediaType: "document", extension: "docx" };
+  }
+  if (name.endsWith(".onode") || name.endsWith(".onode.json")) {
+    let parsed: { format?: string; schemaVersion?: string };
+    try {
+      parsed = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as { format?: string; schemaVersion?: string };
+    } catch {
+      throw new Error("The graph project must be an UTF-8 JSON project document");
+    }
+    if (parsed.format !== "open-node-project" || parsed.schemaVersion !== "1.0.0") throw new Error("The selected file is not a supported graph project");
+    return { kind: "graph", mimeType: "application/vnd.open-node.project+json", mediaType: "document", extension: name.endsWith(".onode.json") ? "onode.json" : "onode" };
+  }
+  throw new Error("Allowed file types: PDF, Markdown, DOCX, and graph project");
+}
+
+function isZip(bytes: Uint8Array): boolean {
+  return bytes[0] === 0x50 && bytes[1] === 0x4b && ((bytes[2] === 0x03 && bytes[3] === 0x04) || (bytes[2] === 0x05 && bytes[3] === 0x06));
+}
+
+function zipContains(bytes: Uint8Array, name: string): boolean {
+  const needle = new TextEncoder().encode(name);
+  outer: for (let offset = 0; offset <= bytes.length - needle.length; offset += 1) {
+    for (let index = 0; index < needle.length; index += 1) if (bytes[offset + index] !== needle[index]) continue outer;
+    return true;
+  }
+  return false;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += 32_768) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 32_768));
+  }
+  return btoa(binary);
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return bytes;
+}
+
+async function importAssetForDefinition(assets: AssetRegistry, file: File, definition?: NodeDefinition) {
+  const browserDocument = isBrowserDocumentDefinition(definition);
+  const imported = await assets.import(file as ImportableFile, browserDocument ? { maxBytes: BROWSER_DOCUMENT_MAX_BYTES } : undefined);
+  if (browserDocument) {
+    if (!imported.bytes) throw new Error("The browser could not read the selected file");
+    const descriptor = browserDocumentDescriptor(file, imported.bytes);
+    imported.reference.mimeType = descriptor.mimeType;
+    imported.reference.mediaType = descriptor.mediaType;
+    imported.reference.metadata = {
+      ...imported.reference.metadata,
+      extension: descriptor.extension,
+      browserDocument: { kind: descriptor.kind, dataBase64: bytesToBase64(imported.bytes) } satisfies BrowserDocumentPayload,
+    };
+    assets.upsert(imported.reference);
+  } else if (imported.preview) {
+    imported.reference.metadata["previewUrl"] = imported.preview.value;
+  }
+  return imported;
+}
+
+function getBrowserDocumentPayload(asset: OpenNodeProject["assets"][number]): BrowserDocumentPayload {
+  const value = asset.metadata["browserDocument"];
+  if (!value || typeof value !== "object") throw new Error("The attached file payload is missing");
+  const payload = value as Partial<BrowserDocumentPayload>;
+  if (!["pdf", "markdown", "docx", "graph"].includes(String(payload.kind)) || typeof payload.dataBase64 !== "string") {
+    throw new Error("The attached file payload is invalid");
+  }
+  return payload as BrowserDocumentPayload;
+}
+
+function safeDownloadName(name: string): string {
+  return name.replace(/[\\/\u0000-\u001f\u007f]/g, "_").slice(0, 180) || "document";
+}
+
+function openBlobAsset(asset: OpenNodeProject["assets"][number], urls: Set<string>): void {
+  const payload = getBrowserDocumentPayload(asset);
+  const bytes = base64ToBytes(payload.dataBase64);
+  const url = URL.createObjectURL(new Blob([new Uint8Array(bytes).buffer], { type: browserDocumentMime(payload.kind) }));
+  urls.add(url);
+  const link = document.createElement("a");
+  link.href = url;
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.click();
+  window.setTimeout(() => { URL.revokeObjectURL(url); urls.delete(url); }, 60_000);
+}
+
+function downloadBlobAsset(asset: OpenNodeProject["assets"][number], urls: Set<string>): void {
+  const payload = getBrowserDocumentPayload(asset);
+  const bytes = base64ToBytes(payload.dataBase64);
+  const url = URL.createObjectURL(new Blob([new Uint8Array(bytes).buffer], { type: browserDocumentMime(payload.kind) }));
+  urls.add(url);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = safeDownloadName(asset.name);
+  link.click();
+  window.setTimeout(() => { URL.revokeObjectURL(url); urls.delete(url); }, 0);
+}
+
+function browserDocumentMime(kind: BrowserDocumentKind): string {
+  if (kind === "pdf") return "application/pdf";
+  if (kind === "markdown") return "text/plain;charset=utf-8";
+  if (kind === "docx") return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  return "application/json;charset=utf-8";
+}
 
 export const OpenNodeEditor = forwardRef<OpenNodeEditorHandle, OpenNodeEditorProps>(function OpenNodeEditor(
   { controller, mode = "embedded-edit", className = "", themeTokens, onSaveRequest, onOpenRequest, onProjectChanged, visualOnly = false },
@@ -195,6 +338,7 @@ export const OpenNodeEditor = forwardRef<OpenNodeEditorHandle, OpenNodeEditorPro
   const altDragUsedRef = useRef(false);
   const suppressActivationRef = useRef<{ elementId: string; until: number } | undefined>(undefined);
   const inspectorStateRef = useRef<{ open: boolean; elementId?: string }>({ open: false });
+  const browserDocumentUrlsRef = useRef(new Set<string>());
 
   const elements = useMemo(() => [...project.groups, ...project.containers, ...project.nodes], [project]);
   const collapsedMembers = useMemo(() => project.settings.groupsVisible === false ? new Set<string>() : new Set(project.groups.filter((group) => group.collapsed).flatMap((group) => [...group.memberNodeIds, ...group.memberContainerIds])), [project.groups, project.settings.groupsVisible]);
@@ -211,6 +355,11 @@ export const OpenNodeEditor = forwardRef<OpenNodeEditorHandle, OpenNodeEditorPro
   const closeInspector = useCallback(() => {
     inspectorStateRef.current = { ...inspectorStateRef.current, open: false };
     setInspectorOpen(false);
+  }, []);
+
+  useEffect(() => () => {
+    for (const url of browserDocumentUrlsRef.current) URL.revokeObjectURL(url);
+    browserDocumentUrlsRef.current.clear();
   }, []);
 
   useEffect(() => {
@@ -1035,17 +1184,62 @@ export const OpenNodeEditor = forwardRef<OpenNodeEditorHandle, OpenNodeEditorPro
 
   const importFileToNode = async (nodeId: string, file: File) => {
     if (!controller.assets) return;
-    const imported = await controller.assets.import(file as ImportableFile);
-    if (imported.preview) imported.reference.metadata["previewUrl"] = imported.preview.value;
-    execute("Import Asset", (draft) => {
-      if (!draft.assets.some((asset) => asset.id === imported.reference.id)) draft.assets.push(imported.reference);
-      const node = draft.nodes.find((candidate) => candidate.id === nodeId);
-      if (!node) return;
-      node.parameters["assetId"] = imported.reference.id;
-      const outputPort = node.ports.find((port) => port.direction === "output");
-      if (outputPort) { outputPort.id = "result"; outputPort.label = "Result"; outputPort.typeId = assetOutputType(imported.reference); outputPort.dynamic = true; }
-      node.ports = node.ports.filter((port) => port.direction !== "output" || port === outputPort);
-    });
+    const currentNode = project.nodes.find((candidate) => candidate.id === nodeId);
+    const definition = currentNode ? controller.nodes.get(currentNode.nodeTypeId, currentNode.nodeTypeVersion) : undefined;
+    try {
+      const imported = await importAssetForDefinition(controller.assets, file, definition);
+      const browserDocument = isBrowserDocumentDefinition(definition);
+      let removedAssetId = "";
+      execute("Import Asset", (draft) => {
+        if (!draft.assets.some((asset) => asset.id === imported.reference.id)) draft.assets.push(imported.reference);
+        const node = draft.nodes.find((candidate) => candidate.id === nodeId);
+        if (!node) return;
+        const previousAssetId = String(node.parameters["assetId"] ?? "");
+        node.parameters["assetId"] = imported.reference.id;
+        if (browserDocument && previousAssetId && previousAssetId !== imported.reference.id) {
+          const stillReferenced = draft.nodes.some((candidate) => candidate.id !== node.id && Object.values(candidate.parameters).includes(previousAssetId));
+          if (!stillReferenced) {
+            draft.assets = draft.assets.filter((asset) => asset.id !== previousAssetId);
+            removedAssetId = previousAssetId;
+          }
+        }
+        if (!browserDocument) {
+          const outputPort = node.ports.find((port) => port.direction === "output");
+          if (outputPort) { outputPort.id = "result"; outputPort.label = "Result"; outputPort.typeId = assetOutputType(imported.reference); outputPort.dynamic = true; }
+          node.ports = node.ports.filter((port) => port.direction !== "output" || port === outputPort);
+        }
+      });
+      if (removedAssetId) controller.assets.remove(removedAssetId);
+      setStatusMessage(`Attached ${file.name}`);
+    } catch (error) {
+      const message = (error as Error).message;
+      setStatusMessage(message.includes("maximum size") ? "The file exceeds the 4 MB document limit" : message);
+    }
+  };
+
+  const openAssetFromNode = async (asset: OpenNodeProject["assets"][number]) => {
+    try {
+      const payload = getBrowserDocumentPayload(asset);
+      if (payload.kind === "graph") {
+        if (!onOpenRequest || !createProjectTab()) return;
+        await onOpenRequest(new TextDecoder().decode(base64ToBytes(payload.dataBase64)));
+        setStatusMessage(`Opened ${asset.name} in a new project tab`);
+        return;
+      }
+      openBlobAsset(asset, browserDocumentUrlsRef.current);
+      setStatusMessage(`Opened ${asset.name} with the browser`);
+    } catch (error) {
+      setStatusMessage((error as Error).message);
+    }
+  };
+
+  const downloadAssetFromNode = (asset: OpenNodeProject["assets"][number]) => {
+    try {
+      downloadBlobAsset(asset, browserDocumentUrlsRef.current);
+      setStatusMessage(`Downloaded ${asset.name}`);
+    } catch (error) {
+      setStatusMessage((error as Error).message);
+    }
   };
 
   const renameElement = (elementId: string, value: string) => {
@@ -1187,7 +1381,7 @@ export const OpenNodeEditor = forwardRef<OpenNodeEditorHandle, OpenNodeEditorPro
               if (nodeId) suppressActivationRef.current = { elementId: nodeId, until: Number.POSITIVE_INFINITY };
               else if (suppressActivationRef.current) suppressActivationRef.current = { ...suppressActivationRef.current, until: performance.now() + 120 };
             }} onParameterCommit={updateNodeParameter} onFileDrop={(nodeId, file) => void importFileToNode(nodeId, file)} />)}
-            {visibleElements.filter((element) => element.kind === "node" && !(element as NodeInstance).parentContainerId).map((element) => <NodeView key={element.id} node={element as NodeInstance} definition={controller.nodes.get((element as NodeInstance).nodeTypeId, (element as NodeInstance).nodeTypeVersion)} project={project} timelineTime={timeline.timeSeconds} session={activeSession} selected={selection.has(element.id)} dragging={interaction?.kind === "drag" && interaction.ids.includes(element.id)} offset={interaction?.kind === "drag" && interaction.ids.includes(element.id) ? displayOffset : { x: 0, y: 0 }} previewRect={resizePreview?.elementId === element.id ? resizePreview.rect : undefined} readOnly={readOnly} onPointerDown={onElementPointerDown} onSelect={onElementSelect} onActivate={onElementActivate} onContextMenu={onElementContextMenu} onResize={onResizePointerDown} onParameterCommit={updateNodeParameter} onFileDrop={(file) => void importFileToNode(element.id, file)} onStartConnection={(nodeId, portId, kind, point) => setPendingConnection({ sourceElementId: nodeId, sourcePortId: portId, kind, point })} onFinishConnection={createConnection} />)}
+            {visibleElements.filter((element) => element.kind === "node" && !(element as NodeInstance).parentContainerId).map((element) => <NodeView key={element.id} node={element as NodeInstance} definition={controller.nodes.get((element as NodeInstance).nodeTypeId, (element as NodeInstance).nodeTypeVersion)} project={project} timelineTime={timeline.timeSeconds} session={activeSession} selected={selection.has(element.id)} dragging={interaction?.kind === "drag" && interaction.ids.includes(element.id)} offset={interaction?.kind === "drag" && interaction.ids.includes(element.id) ? displayOffset : { x: 0, y: 0 }} previewRect={resizePreview?.elementId === element.id ? resizePreview.rect : undefined} readOnly={readOnly} onPointerDown={onElementPointerDown} onSelect={onElementSelect} onActivate={onElementActivate} onContextMenu={onElementContextMenu} onResize={onResizePointerDown} onParameterCommit={updateNodeParameter} onFileDrop={(file) => void importFileToNode(element.id, file)} onOpenAsset={(asset) => void openAssetFromNode(asset)} onDownloadAsset={downloadAssetFromNode} onStartConnection={(nodeId, portId, kind, point) => setPendingConnection({ sourceElementId: nodeId, sourcePortId: portId, kind, point })} onFinishConnection={createConnection} />)}
             {project.settings.annotationsVisible !== false && project.annotations.map((annotation) => {
               const rendered = annotationPointPreview?.id === annotation.id ? annotationPointPreview : annotation;
               return <AnnotationView key={annotation.id} annotation={rendered} selected={selection.has(annotation.id)} offset={interaction?.kind === "drag" && interaction.ids.includes(annotation.id) ? displayOffset : { x: 0, y: 0 }} previewRect={resizePreview?.elementId === annotation.id ? resizePreview.rect : undefined} previewRotation={rotationPreview?.elementId === annotation.id ? rotationPreview.rotation : undefined} readOnly={readOnly} onPointerDown={onElementPointerDown} onSelect={onElementSelect} onActivate={onElementActivate} onContextMenu={onElementContextMenu} onResize={onResizePointerDown} onRotate={onAnnotationRotatePointerDown} onPoint={onAnnotationPointPointerDown} onTextCommit={updateAnnotationText} />;
@@ -1217,7 +1411,7 @@ export const OpenNodeEditor = forwardRef<OpenNodeEditorHandle, OpenNodeEditorPro
       {!visualOnly && project.timeline.enabled && project.settings.timelineVisible && <TimelineBar controller={controller.timeline} settings={project.timeline} onHide={() => controller.store.mutate((draft) => { draft.settings.timelineVisible = false; }, "settings")} onChange={(patch) => controller.store.mutate((draft) => { draft.timeline = { ...draft.timeline, ...patch }; }, "timeline")} />}
       <footer className="on-statusbar">
         {!visualOnly && <div className="on-progress-track"><div className={`on-progress-fill ${activeSession?.progress.percent == null ? "is-indeterminate" : ""}`} style={{ width: `${activeSession?.progress.percent ?? 18}%` }} /></div>}
-        <span>{visualOnly ? "Visual architecture map" : statusMessage}</span>{!visualOnly && <span>{activeSession ? `${activeSession.progress.completed}/${activeSession.progress.total}` : "0/0"}</span>}
+        <span>{visualOnly && statusMessage === "Ready" ? "Visual architecture map" : statusMessage}</span>{!visualOnly && <span>{activeSession ? `${activeSession.progress.completed}/${activeSession.progress.total}` : "0/0"}</span>}
         <span className="on-status-spacer" /><span>Zoom {Math.round(viewport.zoom * 100)}%</span><span>Mouse X {Math.round(mouseWorld.x)} / Y {Math.round(mouseWorld.y)}</span><span>{project.metadata.updatedAt === project.metadata.createdAt ? "Saved" : "Modified"}</span>
       </footer>
       {canvasMenu?.kind === "element" && <ElementContextMenu menu={canvasMenu} element={getCanvasElement(project, canvasMenu.id)} selectionCount={contextElementIds.size} readOnly={readOnly} onCopy={() => { copyIds(contextElementIds); setCanvasMenu(null); }} onDuplicate={() => { duplicateIds(contextElementIds); setCanvasMenu(null); }} onCut={() => cutIds(contextElementIds)} onDelete={() => deleteElementIds(contextElementIds)} onBypass={() => { toggleBypass(contextElementIds); setCanvasMenu(null); }} onSaveContainer={() => { saveContainerPreset(canvasMenu.id); setCanvasMenu(null); }} onClose={() => setCanvasMenu(null)} />}
@@ -1304,11 +1498,13 @@ function isTextCanvasNode(node: NodeInstance): boolean {
   return node.nodeTypeId === "open-node.core.text" || node.nodeTypeId === "exocortex.architecture.module";
 }
 
-const NodeView = memo(function NodeView({ node, definition, project, timelineTime, session, selected, dragging, offset, previewRect, readOnly, onPointerDown, onSelect, onActivate, onContextMenu, onResize, onParameterCommit, onFileDrop, onStartConnection, onFinishConnection }: {
+const NodeView = memo(function NodeView({ node, definition, project, timelineTime, session, selected, dragging, offset, previewRect, readOnly, onPointerDown, onSelect, onActivate, onContextMenu, onResize, onParameterCommit, onFileDrop, onOpenAsset, onDownloadAsset, onStartConnection, onFinishConnection }: {
   node: NodeInstance; definition?: NodeDefinition; project: OpenNodeProject; timelineTime: number; session?: ExecutionSession; selected: boolean; dragging: boolean; offset: Point; previewRect?: Rect; readOnly: boolean;
   onPointerDown(event: ReactPointerEvent, element: GraphElement): void; onSelect(event: ReactPointerEvent, element: GraphElement): void; onActivate(event: ReactMouseEvent, element: GraphElement): void; onContextMenu(event: ReactMouseEvent, element: GraphElement): void;
   onResize(event: ReactPointerEvent, element: GraphElement, handle: ResizeHandle): void; onParameterCommit(nodeId: string, parameterId: string, value: unknown): void;
   onFileDrop(file: File): void;
+  onOpenAsset(asset: OpenNodeProject["assets"][number]): void;
+  onDownloadAsset(asset: OpenNodeProject["assets"][number]): void;
   onStartConnection(nodeId: string, portId: string, kind: "data" | "control", point: Point): void; onFinishConnection(nodeId: string, portId: string): void;
 }) {
   const state = session?.elementStates.get(node.id);
@@ -1316,14 +1512,16 @@ const NodeView = memo(function NodeView({ node, definition, project, timelineTim
   const outputs = node.ports.filter((port) => port.direction === "output");
   const assetId = String(node.parameters["assetId"] ?? "");
   const asset = project.assets.find((item) => item.id === assetId);
+  const browserDocument = isBrowserDocumentDefinition(definition);
   const rect = previewRect ?? { x: node.position.x + offset.x, y: node.position.y + offset.y, width: node.size.width, height: node.size.height };
-  return <article className={`on-node ${isTextCanvasNode(node) ? "is-text-node" : ""} ${selected ? "is-selected" : ""} ${dragging ? "is-dragging" : ""} ${node.bypassed ? "is-bypassed" : ""} is-status-${state?.status ?? "idle"}`} style={{ left: rect.x, top: rect.y, width: rect.width, minHeight: rect.height, ...(isTextCanvasNode(node) ? { height: rect.height } : {}), "--element-color": node.color ?? definition?.defaultColor ?? "#667085" } as CSSProperties} data-node-id={node.id} data-node-type-id={node.nodeTypeId} onDragOver={(event) => { if (node.nodeTypeId === "open-node.import.universal" && event.dataTransfer.types.includes("Files")) event.preventDefault(); }} onDrop={(event) => { const file = event.dataTransfer.files[0]; if (node.nodeTypeId === "open-node.import.universal" && file) { event.preventDefault(); event.stopPropagation(); onFileDrop(file); } }} onPointerDown={(event) => { onSelect(event, node); if (!(event.target as HTMLElement).closest("input,select,textarea,button,.on-port,.on-resize-handle")) onPointerDown(event, node); }} onClick={(event) => onActivate(event, node)} onContextMenu={(event) => onContextMenu(event, node)}>
+  return <article className={`on-node ${isTextCanvasNode(node) ? "is-text-node" : ""} ${browserDocument ? "is-browser-document" : ""} ${selected ? "is-selected" : ""} ${dragging ? "is-dragging" : ""} ${node.bypassed ? "is-bypassed" : ""} is-status-${state?.status ?? "idle"}`} style={{ left: rect.x, top: rect.y, width: rect.width, minHeight: rect.height, ...(isTextCanvasNode(node) ? { height: rect.height } : {}), "--element-color": node.color ?? definition?.defaultColor ?? "#667085" } as CSSProperties} data-node-id={node.id} data-node-type-id={node.nodeTypeId} onDragOver={(event) => { if ((node.nodeTypeId === "open-node.import.universal" || browserDocument) && event.dataTransfer.types.includes("Files")) event.preventDefault(); }} onDrop={(event) => { const file = event.dataTransfer.files[0]; if ((node.nodeTypeId === "open-node.import.universal" || browserDocument) && file) { event.preventDefault(); event.stopPropagation(); onFileDrop(file); } }} onPointerDown={(event) => { onSelect(event, node); if (!(event.target as HTMLElement).closest("input,select,textarea,button,.on-port,.on-resize-handle")) onPointerDown(event, node); }} onClick={(event) => onActivate(event, node)} onContextMenu={(event) => onContextMenu(event, node)}>
     <header onPointerDown={(event) => onPointerDown(event, node)}><span className="on-node-icon">{definition?.icon ?? node.label.slice(0, 2).toUpperCase()}</span><div><strong>{node.label}</strong><small>{definition?.category ?? "Unresolved"}</small></div><span className={`on-node-state is-${state?.status ?? "idle"}`}>{state?.status ?? "idle"}</span></header>
     <div className="on-node-body">
       <div className="on-port-column is-input">{inputs.map((port, index) => <Port key={port.id} port={port} elementId={node.id} top={NODE_PORT_START - NODE_HEADER_HEIGHT + PORT_VISUAL_OFFSET_Y + index * NODE_PORT_GAP} side="left" onPointerDown={() => {}} onPointerUp={() => onFinishConnection(node.id, port.id)} />)}</div>
-      <div className="on-node-summary">{node.unresolved ? <span className="on-error-text">{node.unresolved.reason}</span> : <ParameterSummary node={node} definition={definition} readOnly={readOnly} onCommit={onParameterCommit} />}</div>
+      <div className="on-node-summary">{node.unresolved ? <span className="on-error-text">{node.unresolved.reason}</span> : browserDocument ? null : <ParameterSummary node={node} definition={definition} readOnly={readOnly} onCommit={onParameterCommit} />}</div>
       <div className="on-port-column is-output">{outputs.map((port, index) => <Port key={port.id} port={port} elementId={node.id} top={NODE_PORT_START - NODE_HEADER_HEIGHT + PORT_VISUAL_OFFSET_Y + index * NODE_PORT_GAP} side="right" onPointerDown={(event) => { event.stopPropagation(); onStartConnection(node.id, port.id, port.kind, { x: rect.x + rect.width, y: rect.y + NODE_PORT_START + PORT_VISUAL_OFFSET_Y + index * NODE_PORT_GAP }); }} onPointerUp={() => {}} />)}</div>
-      {asset && node.uiState.previewEnabled !== false && <AssetPreview asset={asset} timelineTime={timelineTime} />}
+      {browserDocument && <BrowserDocumentPanel asset={asset} readOnly={readOnly} onFile={onFileDrop} onOpen={onOpenAsset} onDownload={onDownloadAsset} />}
+      {!browserDocument && asset && node.uiState.previewEnabled !== false && <AssetPreview asset={asset} timelineTime={timelineTime} />}
       {definition?.capabilities?.preview && !asset && session?.results.get(node.id) && <pre className="on-value-preview">{formatOutputs(session.results.get(node.id)?.outputs)}</pre>}
     </div>
     {state?.progress != null && state.status === "running" && <div className="on-node-progress"><span style={{ width: `${state.progress * 100}%` }} /></div>}
@@ -1494,19 +1692,27 @@ function Inspector({ open, element, project, definitions, assets, readOnly, exec
     {element.kind === "annotation" && <InspectorSection title="Drawing">{["rectangle", "ellipse", "diamond", "text"].includes(element.annotationType) && <Field label="Angle"><input type="number" disabled={readOnly} value={Math.round(element.rotation)} onChange={(event) => update((target) => { if (target.kind === "annotation") target.rotation = Number(event.target.value); }, "Rotate annotation")} /></Field>}{["rectangle", "ellipse", "diamond", "brush"].includes(element.annotationType) && <Field label="Stroke"><input type="number" min="1" max="32" disabled={readOnly} value={element.strokeWidth} onChange={(event) => update((target) => { if (target.kind === "annotation") target.strokeWidth = clamp(Number(event.target.value), 1, 32); }, "Stroke width")} /></Field>}{["rectangle", "ellipse", "diamond"].includes(element.annotationType) && <><Field label="Fill"><input type="color" disabled={readOnly} value={solidHexColor(element.fillColor ?? "#111318")} onChange={(event) => update((target) => { if (target.kind === "annotation") target.fillColor = event.target.value; }, "Fill color")} /></Field><Field label="Fill opacity"><span className="on-opacity-control"><input type="range" min="0" max="100" disabled={readOnly} value={Math.round(element.opacity * 100)} onChange={(event) => update((target) => { if (target.kind === "annotation") target.opacity = clamp(Number(event.target.value) / 100, 0, 1); }, "Change fill opacity")} /><output>{Math.round(element.opacity * 100)}%</output></span></Field></>}{element.annotationType === "text" && <Field label="Size"><input type="number" min="8" max="160" disabled={readOnly} value={element.fontSize ?? 24} onChange={(event) => update((target) => { if (target.kind === "annotation") target.fontSize = clamp(Number(event.target.value), 8, 160); }, "Text size")} /></Field>}</InspectorSection>}
     {element.kind === "node" && definition && <InspectorSection title="Parameters">{definition.parameters.map((parameter) => <ParameterEditor key={parameter.id} parameter={parameter} value={element.parameters[parameter.id]} disabled={readOnly} onCommit={async (value) => {
       if (parameter.control === "file" && value instanceof File && assets) {
-        const imported = await assets.import(value as ImportableFile);
-        if (imported.preview) imported.reference.metadata["previewUrl"] = imported.preview.value;
+        const imported = await importAssetForDefinition(assets, value, definition);
+        let removedAssetId = "";
         execute("Import Asset", (draft) => {
           if (!draft.assets.some((asset) => asset.id === imported.reference.id)) draft.assets.push(imported.reference);
           const node = draft.nodes.find((candidate) => candidate.id === element.id);
           if (!node) return;
+          const previousAssetId = String(node.parameters[parameter.id] ?? "");
           node.parameters[parameter.id] = imported.reference.id;
           if (node.nodeTypeId === "open-node.import.universal") {
             const outputPort = node.ports.find((port) => port.direction === "output");
             if (outputPort) { outputPort.id = "result"; outputPort.label = "Result"; outputPort.typeId = assetOutputType(imported.reference); outputPort.dynamic = true; }
             node.ports = node.ports.filter((port) => port.direction !== "output" || port === outputPort);
+          } else if (isBrowserDocumentDefinition(definition) && previousAssetId && previousAssetId !== imported.reference.id) {
+            const stillReferenced = draft.nodes.some((candidate) => candidate.id !== node.id && Object.values(candidate.parameters).includes(previousAssetId));
+            if (!stillReferenced) {
+              draft.assets = draft.assets.filter((asset) => asset.id !== previousAssetId);
+              removedAssetId = previousAssetId;
+            }
           }
         });
+        if (removedAssetId) assets.remove(removedAssetId);
       } else update((target) => { if (target.kind === "node") target.parameters[parameter.id] = value; }, `Set ${parameter.label}`);
     }} />)}</InspectorSection>}
     {element.kind === "node" && <InspectorSection title="Ports"><div className="on-port-list">{element.ports.map((port) => <div key={port.id}><span className={`on-tiny-dot is-${port.direction}`} /><strong>{port.label}</strong><small>{port.typeId}</small></div>)}</div></InspectorSection>}
@@ -1565,6 +1771,35 @@ function ResourceDashboard({ metrics, onClose }: { metrics: ResourceMetrics; onC
 }
 
 function Metric({ label, value, used, total, fallback }: { label: string; value: number | null; used?: number | null; total?: number | null; fallback?: string }) { return <div><span>{label}</span><strong>{value == null ? fallback ?? "Restricted" : formatMetric(value)}</strong>{used != null && total != null && <small>{formatMetric(used, "bytes")} / {formatMetric(total, "bytes")}</small>}<i><b style={{ width: `${value ?? 0}%` }} /></i></div>; }
+
+function BrowserDocumentPanel({ asset, readOnly, onFile, onOpen, onDownload }: {
+  asset?: OpenNodeProject["assets"][number];
+  readOnly: boolean;
+  onFile(file: File): void;
+  onOpen(asset: OpenNodeProject["assets"][number]): void;
+  onDownload(asset: OpenNodeProject["assets"][number]): void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const details = asset ? `${String(asset.metadata["extension"] ?? "file").toUpperCase()} · ${formatAssetSize(asset.size)}` : "PDF · MD · DOCX · GRAPH";
+  return <div className="on-browser-document" onClick={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
+    <input ref={inputRef} className="on-browser-document-input" type="file" accept={BROWSER_DOCUMENT_ACCEPT} disabled={readOnly} aria-label="Upload document" onChange={(event) => { const file = event.target.files?.[0]; if (file) onFile(file); event.currentTarget.value = ""; }} />
+    <div className="on-browser-document-file">
+      <span aria-hidden="true">{asset ? "FILE" : "+"}</span>
+      <div><strong title={asset?.name}>{asset?.name ?? "Attach a document"}</strong><small>{details}</small></div>
+    </div>
+    <div className="on-browser-document-actions">
+      {asset && <button type="button" onClick={() => onOpen(asset)}>Open</button>}
+      {asset && <button type="button" onClick={() => onDownload(asset)}>Download</button>}
+      <button type="button" disabled={readOnly} onClick={() => inputRef.current?.click()}>{asset ? "Replace" : "Upload"}</button>
+    </div>
+  </div>;
+}
+
+function formatAssetSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 function AssetPreview({ asset, timelineTime }: { asset: OpenNodeProject["assets"][number]; timelineTime: number }) {
   const url = String(asset.metadata["previewUrl"] ?? asset.uri ?? "");

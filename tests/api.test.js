@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -345,6 +346,26 @@ describe("Kernel API", () => {
     project.execution.mode = "reactive";
     project.timeline.enabled = true;
     project.settings.dashboardVisible = true;
+    const documentBytes = Buffer.from("# Attached guide\n", "utf8");
+    project.assets.push({
+      id: "asset-test-document",
+      name: "guide.md",
+      storage: "embedded",
+      mimeType: "text/plain;charset=utf-8",
+      mediaType: "text",
+      size: documentBytes.length,
+      checksum: createHash("sha256").update(documentBytes).digest("hex"),
+      metadata: {
+        extension: "md",
+        browserDocument: { kind: "markdown", dataBase64: documentBytes.toString("base64") },
+      },
+      embeddedPath: "assets/guide.md",
+    });
+    project.nodes.push({
+      id: "node-test-document",
+      nodeTypeId: "exocortex.architecture.document",
+      parameters: { assetId: "asset-test-document" },
+    });
 
     const saved = await agent.put("/api/topology").send({ project });
     assert.equal(saved.status, 200);
@@ -352,6 +373,13 @@ describe("Kernel API", () => {
     assert.equal(saved.body.project.execution.mode, "manual");
     assert.equal(saved.body.project.timeline.enabled, false);
     assert.equal(saved.body.project.settings.dashboardVisible, false);
+    assert.equal(saved.body.project.assets.at(-1).metadata.browserDocument.kind, "markdown");
+
+    const unsafeMime = structuredClone(saved.body.project);
+    unsafeMime.assets.at(-1).mimeType = "text/html";
+    const rejected = await agent.put("/api/topology").send({ project: unsafeMime });
+    assert.equal(rejected.status, 400);
+    assert.match(rejected.body.error, /MIME type/i);
 
     const restored = await agent
       .post("/api/topology/restore")

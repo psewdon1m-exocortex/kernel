@@ -50,6 +50,41 @@ const architectureNodes: NodeDefinition[] = [{
     // disabled by visualOnly, but the registry still requires an implementation.
     execute: async () => ({ outputs: {} }),
     containerAdapter: async ({ value }) => value,
+  }, {
+    typeId: "exocortex.architecture.document",
+    version: "1.0.0",
+    displayName: "document",
+    description: "Attach a PDF, Markdown, DOCX, or versioned graph project.",
+    category: "DOCUMENT",
+    tags: ["architecture", "visual", "browser-document"],
+    defaultColor: "#ffffff",
+    inputs: [{
+      id: "in",
+      label: "In",
+      kind: "data",
+      typeId: "core.any",
+      multiple: true,
+    }],
+    outputs: [{
+      id: "out",
+      label: "Out",
+      kind: "data",
+      typeId: "core.any",
+      multiple: true,
+    }],
+    parameters: [{
+      id: "assetId",
+      label: "File",
+      control: "file",
+      accept: [".pdf", ".md", ".docx", ".onode", ".onode.json"],
+    }],
+    pure: true,
+    containerCompatible: false,
+    bypass: { strategy: "unsupported" },
+    capabilities: { preview: true },
+    createDefaultParams: () => ({ assetId: "" }),
+    validate: () => ({ valid: true, issues: [] }),
+    execute: async () => ({ outputs: {} }),
   }];
 
 export function TopologyPage({ notify }: { notify: Notify }) {

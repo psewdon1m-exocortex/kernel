@@ -79,7 +79,7 @@ Constitution
 Settings
 ```
 
-Web UI следует правилам `UI_UX_SPECIFICATION.md`:
+Web UI следует правилам `../UNIFICATION_SPECIFICATION.md`:
 
 - истинно чёрная рабочая поверхность;
 - белые информационные линии;
@@ -254,7 +254,7 @@ topology.onode.json
 `source_revision`.
 
 Оригинальный дизайн Open Node сохраняется внутри Canvas. Оболочка страницы и
-основная навигация Kernel следуют `UI_UX_SPECIFICATION.md`.
+основная навигация Kernel следуют `../UNIFICATION_SPECIFICATION.md`.
 
 ## 10. Register
 
@@ -550,7 +550,7 @@ Kernel готов, если:
 15. Недоступность Kernel не требует остановки клиентов.
 16. Register не хранит секреты, кроме явно разрешённого
     `services.kernel.service_token`.
-17. UI следует `UI_UX_SPECIFICATION.md`.
+17. UI следует `../UNIFICATION_SPECIFICATION.md`.
 18. Интерфейс работает с клавиатурой и на узком viewport без overlap.
 19. Мутации фиксируются в audit.
 20. Unit, API и browser tests проходят.

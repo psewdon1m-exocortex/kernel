@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { readFile } from "node:fs/promises";
 
 async function navigate(page: import("@playwright/test").Page, name: string) {
   if (await page.getByRole("button", { name: "Open navigation" }).isVisible()) {
@@ -134,10 +135,48 @@ test("Topology uses visual-only Open Node", async ({ page }) => {
   await canvas.dblclick({ position: { x: 520, y: 280 } });
   await page.getByRole("button", { name: /Nodes/ }).click();
   await expect(page.locator(".on-library-tile", { hasText: "module" })).toHaveCount(1);
-  await expect(page.locator(".on-library-grid .on-library-tile")).toHaveCount(1);
+  await expect(page.locator(".on-library-tile", { hasText: "document" })).toHaveCount(1);
+  await expect(page.locator(".on-library-grid .on-library-tile")).toHaveCount(2);
   await page.getByRole("button", { name: "Close Library" }).click();
   await page.getByRole("button", { name: "Versions" }).click();
   await expect(page.getByRole("dialog", { name: "TOPOLOGY VERSIONS" })).toContainText("ACTIVE");
+});
+
+test("document Node exposes browser open and persists downloaded bytes", async ({ page }) => {
+  await navigate(page, "Topology Map");
+  const canvas = page.getByLabel("Infinite graph canvas");
+  await canvas.dblclick({ position: { x: 520, y: 280 } });
+  await page.getByRole("button", { name: /Nodes/ }).click();
+  const documents = page.locator(".on-world > .on-node[data-node-type-id='exocortex.architecture.document']");
+  const before = await documents.count();
+  await page.locator(".on-library-tile", { hasText: "document" }).dblclick();
+  await expect(documents).toHaveCount(before + 1);
+
+  const documentNode = documents.last();
+  const contents = "# Browser-backed document\n\nPersistent attachment content.\n";
+  await documentNode.getByLabel("Upload document").setInputFiles({
+    name: "architecture-guide.md",
+    mimeType: "text/markdown",
+    buffer: Buffer.from(contents),
+  });
+  await expect(page.locator(".on-statusbar")).toContainText("Attached architecture-guide.md");
+  await expect(documentNode).toContainText("architecture-guide.md");
+  await expect(documentNode.getByRole("button", { name: "Open" })).toBeVisible();
+  await expect(documentNode.getByRole("button", { name: "Download" })).toBeVisible();
+  await expect(page.locator(".topology-meta")).toContainText("Saved");
+
+  const downloadPromise = page.waitForEvent("download");
+  await documentNode.getByRole("button", { name: "Download" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe("architecture-guide.md");
+  const downloadPath = await download.path();
+  if (!downloadPath) throw new Error("Downloaded document path is unavailable");
+  expect(await readFile(downloadPath, "utf8")).toBe(contents);
+
+  await page.reload();
+  const restored = page.locator(".on-world > .on-node[data-node-type-id='exocortex.architecture.document']").last();
+  await expect(restored).toContainText("architecture-guide.md");
+  await expect(restored.getByRole("button", { name: "Download" })).toBeVisible();
 });
 
 test("compatible architecture Nodes can be dropped into Containers", async ({ page }) => {
@@ -168,10 +207,13 @@ test("compatible architecture Nodes can be dropped into Containers", async ({ pa
   await page.locator(".on-library-tile", { hasText: "module" }).dblclick();
   const topLevelNode = page.locator(".on-world > .on-node").last();
   await expect(topLevelNode).toBeVisible();
+  const topLevelText = topLevelNode.locator("textarea.on-notebook-input");
   const nodeHeader = topLevelNode.locator("> header");
   const nodeBox = await nodeHeader.boundingBox();
+  const topLevelNodeBox = await topLevelNode.boundingBox();
+  const topLevelTextBox = await topLevelText.boundingBox();
   const targetBox = await container.boundingBox();
-  if (!nodeBox || !targetBox) throw new Error("Topology drop geometry is unavailable");
+  if (!nodeBox || !topLevelNodeBox || !topLevelTextBox || !targetBox) throw new Error("Topology drop geometry is unavailable");
   const containedBefore = await container.locator(".on-contained-node").count();
   await page.mouse.move(nodeBox.x + nodeBox.width / 2, nodeBox.y + nodeBox.height / 2);
   await page.mouse.down();
@@ -179,6 +221,15 @@ test("compatible architecture Nodes can be dropped into Containers", async ({ pa
   await page.mouse.up();
 
   await expect(container.locator(".on-contained-node")).toHaveCount(containedBefore + 1);
+  const containedNode = container.locator(".on-contained-node").last();
+  const containedText = containedNode.locator("textarea.on-notebook-input");
+  await expect(containedText).toBeVisible();
+  const containedNodeBox = await containedNode.boundingBox();
+  const containedTextBox = await containedText.boundingBox();
+  if (!containedNodeBox || !containedTextBox) throw new Error("Contained Node text geometry is unavailable");
+  const topLevelWidthRatio = topLevelTextBox.width / topLevelNodeBox.width;
+  const containedWidthRatio = containedTextBox.width / containedNodeBox.width;
+  expect(Math.abs(containedWidthRatio - topLevelWidthRatio)).toBeLessThan(0.12);
 });
 
 test("Topology keeps annotations and module text after save and reload", async ({ page }) => {

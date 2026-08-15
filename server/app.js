@@ -29,13 +29,16 @@ import { createUpdaterClient } from "./updater-client.js";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DOCUMENT_TYPES = new Set(["overview", "constitution"]);
 const MAX_MARKDOWN_BYTES = 1024 * 1024;
-const MAX_TOPOLOGY_BYTES = 2 * 1024 * 1024;
+const MAX_TOPOLOGY_BYTES = 8 * 1024 * 1024;
+const MAX_BROWSER_DOCUMENT_BYTES = 4 * 1024 * 1024;
 const MAX_BACKUP_BYTES = 32 * 1024 * 1024;
 const SAFE_KEY = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const SENSITIVE_KEY = /(?:^|[._-])(password|passwd|secret|token|private[._-]?key|cookie|session|recovery|seed)(?:$|[._-])/i;
 const SENSITIVE_VALUE = /(-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:^|\s)(?:sk|ghp|github_pat)_[A-Za-z0-9_-]{12,}|https?:\/\/[^/\s:@]+:[^/\s@]+@|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,})/;
 const ALLOWED_COLOR = /^#[0-9a-f]{6}$/i;
 const MANAGED_SERVICE_TOKEN_KEY = "services.kernel.service_token";
+const BROWSER_DOCUMENT_NODE_TYPE = "exocortex.architecture.document";
+const BROWSER_DOCUMENT_KINDS = new Set(["pdf", "markdown", "docx", "graph"]);
 
 function serializeError(error) {
   if (!error || typeof error !== "object") {
@@ -139,7 +142,7 @@ function validateTopology(value) {
   }
   const serialized = JSON.stringify(value);
   if (Buffer.byteLength(serialized, "utf8") > MAX_TOPOLOGY_BYTES) {
-    throw Object.assign(new Error("Topology project exceeds the 2 MB limit"), { status: 413 });
+    throw Object.assign(new Error("Topology project exceeds the 8 MB limit"), { status: 413 });
   }
   if (value.format !== "open-node-project" || value.schemaVersion !== "1.0.0") {
     throw Object.assign(new Error("Unsupported Open Node project format"), { status: 400 });
@@ -155,6 +158,17 @@ function validateTopology(value) {
       || (typeof asset?.uri === "string" && /^https?:\/\//i.test(asset.uri))
     ) {
       throw Object.assign(new Error("Remote Topology assets are disabled"), { status: 400 });
+    }
+    validateBrowserDocumentAsset(asset);
+  }
+  const assetsById = new Map(value.assets.map((asset) => [asset?.id, asset]));
+  for (const node of value.nodes) {
+    if (node?.nodeTypeId !== BROWSER_DOCUMENT_NODE_TYPE) continue;
+    const assetId = typeof node.parameters?.assetId === "string" ? node.parameters.assetId : "";
+    if (!assetId) continue;
+    const asset = assetsById.get(assetId);
+    if (!asset?.metadata?.browserDocument) {
+      throw Object.assign(new Error("Document Node references a missing or non-embedded file"), { status: 400 });
     }
   }
   const project = structuredClone(value);
@@ -176,6 +190,71 @@ function validateTopology(value) {
     updatedAt: new Date().toISOString(),
   };
   return project;
+}
+
+function validateBrowserDocumentAsset(asset) {
+  const payload = asset?.metadata?.browserDocument;
+  if (payload == null) return;
+  if (!payload || typeof payload !== "object" || !BROWSER_DOCUMENT_KINDS.has(payload.kind) || typeof payload.dataBase64 !== "string") {
+    throw Object.assign(new Error("Invalid embedded document metadata"), { status: 400 });
+  }
+  if (asset.storage !== "embedded") {
+    throw Object.assign(new Error("Attached documents must use embedded storage"), { status: 400 });
+  }
+  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(payload.dataBase64)) {
+    throw Object.assign(new Error("Attached document payload is not canonical base64"), { status: 400 });
+  }
+  const bytes = Buffer.from(payload.dataBase64, "base64");
+  if (bytes.length === 0 || bytes.length > MAX_BROWSER_DOCUMENT_BYTES) {
+    throw Object.assign(new Error("Attached document must contain between 1 byte and 4 MB"), { status: 413 });
+  }
+  if (asset.size !== bytes.length) {
+    throw Object.assign(new Error("Attached document size metadata does not match its payload"), { status: 400 });
+  }
+  const checksum = createHash("sha256").update(bytes).digest("hex");
+  if (!/^[a-f0-9]{64}$/.test(asset.checksum ?? "") || asset.checksum !== checksum) {
+    throw Object.assign(new Error("Attached document checksum does not match its payload"), { status: 400 });
+  }
+  const expectedMime = {
+    pdf: "application/pdf",
+    markdown: "text/plain;charset=utf-8",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    graph: "application/vnd.open-node.project+json",
+  }[payload.kind];
+  if (asset.mimeType !== expectedMime) {
+    throw Object.assign(new Error("Attached document MIME type does not match its declared format"), { status: 400 });
+  }
+  const name = typeof asset.name === "string" ? asset.name.toLowerCase() : "";
+  if (payload.kind === "pdf") {
+    if (!name.endsWith(".pdf") || bytes.subarray(0, 5).toString("ascii") !== "%PDF-") rejectDocumentType("PDF");
+  } else if (payload.kind === "markdown") {
+    if (!name.endsWith(".md") || bytes.includes(0)) rejectDocumentType("Markdown");
+    try {
+      new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    } catch {
+      rejectDocumentType("Markdown");
+    }
+  } else if (payload.kind === "docx") {
+    if (!name.endsWith(".docx") || !isZipBuffer(bytes) || !bytes.includes(Buffer.from("[Content_Types].xml")) || !bytes.includes(Buffer.from("word/document.xml"))) rejectDocumentType("DOCX");
+  } else if (payload.kind === "graph") {
+    if (!(name.endsWith(".onode") || name.endsWith(".onode.json"))) rejectDocumentType("graph project");
+    try {
+      const graph = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+      if (graph?.format !== "open-node-project" || graph?.schemaVersion !== "1.0.0") rejectDocumentType("graph project");
+    } catch (error) {
+      if (error?.status) throw error;
+      rejectDocumentType("graph project");
+    }
+  }
+}
+
+function isZipBuffer(bytes) {
+  return bytes[0] === 0x50 && bytes[1] === 0x4b
+    && ((bytes[2] === 0x03 && bytes[3] === 0x04) || (bytes[2] === 0x05 && bytes[3] === 0x06));
+}
+
+function rejectDocumentType(label) {
+  throw Object.assign(new Error(`Attached file does not match the declared ${label} format`), { status: 400 });
 }
 
 function validateMarkdown(file, type) {

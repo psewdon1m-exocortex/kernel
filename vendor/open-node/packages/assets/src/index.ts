@@ -59,6 +59,8 @@ const MIME_MAP: Record<string, Omit<DetectedAssetType, "confidence">> = {
   "text/markdown": { mimeType: "text/markdown", mediaType: "text", extension: "md" },
   "application/xml": { mimeType: "application/xml", mediaType: "text", extension: "xml" },
   "application/pdf": { mimeType: "application/pdf", mediaType: "document", extension: "pdf" },
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": { mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", mediaType: "document", extension: "docx" },
+  "application/vnd.open-node.project+json": { mimeType: "application/vnd.open-node.project+json", mediaType: "document", extension: "onode.json" },
   "model/gltf+json": { mimeType: "model/gltf+json", mediaType: "geometry", extension: "gltf" },
   "model/gltf-binary": { mimeType: "model/gltf-binary", mediaType: "geometry", extension: "glb" },
   "application/zip": { mimeType: "application/zip", mediaType: "archive", extension: "zip" },
@@ -70,7 +72,7 @@ const EXTENSION_MIME: Record<string, string> = {
   mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime", mkv: "video/x-matroska",
   wav: "audio/wav", mp3: "audio/mpeg", ogg: "audio/ogg", flac: "audio/flac", aac: "audio/aac", m4a: "audio/mp4",
   json: "application/json", yaml: "application/yaml", yml: "application/yaml", csv: "text/csv", tsv: "text/tab-separated-values", txt: "text/plain", md: "text/markdown", xml: "application/xml",
-  pdf: "application/pdf", gltf: "model/gltf+json", glb: "model/gltf-binary", obj: "model/obj", stl: "model/stl", ply: "model/ply", zip: "application/zip",
+  pdf: "application/pdf", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", onode: "application/vnd.open-node.project+json", gltf: "model/gltf+json", glb: "model/gltf-binary", obj: "model/obj", stl: "model/stl", ply: "model/ply", zip: "application/zip",
 };
 
 export class AssetRegistry {
@@ -136,7 +138,14 @@ export class AssetRegistry {
     if (file.size > maxBytes) throw new Error(`Asset exceeds maximum size of ${maxBytes} bytes`);
     const bytes = new Uint8Array(await file.arrayBuffer());
     if (bytes.byteLength !== file.size && file.size !== 0) throw new Error("Asset size changed while importing");
-    const type = await this.detect({ ...file, arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) });
+    // Browser File fields live on the prototype and are lost by object spread.
+    // Copy the import contract explicitly so detection sees the real name/MIME.
+    const type = await this.detect({
+      name: file.name,
+      type: file.type,
+      size: file.size,
+      arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+    });
     if (type.mimeType === "image/svg+xml") sanitizeSvg(new TextDecoder().decode(bytes));
     const storage = options.storage ?? "embedded";
     const detectedMetadata = extractMetadata(type, bytes);

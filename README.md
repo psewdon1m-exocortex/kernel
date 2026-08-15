@@ -203,4 +203,4 @@ npm run check
 - [Web update architecture](WEB_SERVICE_UPDATE_ARCHITECTURE.md)
 - [Release process](RELEASING.md)
 - [Open Node snapshot](vendor/open-node/VENDORED_FROM.md)
-- Общий UI/UX-контракт: `../UI_UX_SPECIFICATION.md`
+- Общая спецификация унификации: `../UNIFICATION_SPECIFICATION.md`
