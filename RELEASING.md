@@ -11,7 +11,8 @@ Kernel releases use tags in the form `kernel-vMAJOR.MINOR.PATCH`.
 4. Commit the release state and push `kernel-vX.Y.Z` to the Kernel repository.
 5. `.github/workflows/release.yml` downloads and verifies the pinned Updater
    bundle, then builds and publishes the OCI image, SBOM,
-   provenance, Compose bundle, release manifest and checksums.
+   provenance, Compose bundle, release manifest, checksums and keyless Sigstore
+   bundles retained for Updater 0.1.x compatibility.
 6. Verify the GitHub release and image digest before changing production.
 
 Kernel discovers only `kernel-v*` releases from the URL stored in
@@ -27,6 +28,10 @@ creates and downloads a backup before handing the checksummed release to it. The
 updater pulls by digest, preserves the data volume, runs health checks and
 automatically restores the old image and backup on failure. Kernel never
 receives the Docker socket.
+
+Production hosts on Updater 0.1.x must first run `sudo updater update --head
+kernel`. The signed Updater transition release makes that self-update possible;
+afterward the normal Kernel update can consume the simplified manifest format.
 
 ## Rollback
 

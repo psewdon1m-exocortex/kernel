@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.2
+
+- Restore detached Sigstore release bundles for compatibility with production
+  hosts that still run Updater 0.1.x.
+- Embed the signed Updater 0.2.1 transition release in new installations.
+
 ## 0.2.1
 
 - Add persistent Topology document Nodes for validated PDF, Markdown, DOCX and
