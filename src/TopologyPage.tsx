@@ -79,12 +79,13 @@ const architectureNodes: NodeDefinition[] = [{
       accept: [".pdf", ".md", ".docx", ".onode", ".onode.json"],
     }],
     pure: true,
-    containerCompatible: false,
+    containerCompatible: true,
     bypass: { strategy: "unsupported" },
     capabilities: { preview: true },
     createDefaultParams: () => ({ assetId: "" }),
     validate: () => ({ valid: true, issues: [] }),
     execute: async () => ({ outputs: {} }),
+    containerAdapter: async ({ value }) => value,
   }];
 
 export function TopologyPage({ notify }: { notify: Notify }) {

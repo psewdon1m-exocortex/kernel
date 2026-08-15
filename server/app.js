@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { createHash } from "node:crypto";
 import cookieParser from "cookie-parser";
 import express from "express";
-import { strToU8, zipSync } from "fflate";
+import { strToU8, unzipSync, zipSync } from "fflate";
 import multer from "multer";
 import {
   createSessionToken,
@@ -32,6 +32,10 @@ const MAX_MARKDOWN_BYTES = 1024 * 1024;
 const MAX_TOPOLOGY_BYTES = 8 * 1024 * 1024;
 const MAX_BROWSER_DOCUMENT_BYTES = 4 * 1024 * 1024;
 const MAX_BACKUP_BYTES = 32 * 1024 * 1024;
+const MAX_BACKUP_MANIFEST_BYTES = 64 * 1024;
+const MAX_BACKUP_COMPRESSION_RATIO = 200;
+const KERNEL_BACKUP_ARCHIVE_FORMAT = "exocortex-kernel-backup-archive";
+const KERNEL_BACKUP_DATA_MEMBER = "data/kernel.json";
 const SAFE_KEY = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const SENSITIVE_KEY = /(?:^|[._-])(password|passwd|secret|token|private[._-]?key|cookie|session|recovery|seed)(?:$|[._-])/i;
 const SENSITIVE_VALUE = /(-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:^|\s)(?:sk|ghp|github_pat)_[A-Za-z0-9_-]{12,}|https?:\/\/[^/\s:@]+:[^/\s@]+@|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,})/;
@@ -255,6 +259,103 @@ function isZipBuffer(bytes) {
 
 function rejectDocumentType(label) {
   throw Object.assign(new Error(`Attached file does not match the declared ${label} format`), { status: 400 });
+}
+
+function parseUtf8Json(bytes, label) {
+  try {
+    const content = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    return JSON.parse(content);
+  } catch {
+    throw Object.assign(new Error(`${label} must be valid UTF-8 JSON`), { status: 400 });
+  }
+}
+
+function buildKernelBackupArchive(backup, sourceVersion) {
+  const data = strToU8(JSON.stringify(backup, null, 2));
+  if (data.byteLength > MAX_BACKUP_BYTES) {
+    throw Object.assign(new Error("Kernel backup exceeds the uncompressed backup limit"), { status: 413 });
+  }
+  const dataChecksum = createHash("sha256").update(data).digest("hex");
+  const manifest = strToU8(JSON.stringify({
+    format: KERNEL_BACKUP_ARCHIVE_FORMAT,
+    schema_version: 1,
+    created_at: backup.created_at,
+    scope: "complete",
+    source_version: sourceVersion,
+    restore_mode: "replace",
+    files: {
+      [KERNEL_BACKUP_DATA_MEMBER]: {
+        sha256: dataChecksum,
+        uncompressed_bytes: data.byteLength,
+        records: 1,
+      },
+    },
+  }, null, 2));
+  const archive = Buffer.from(zipSync({
+    "manifest.json": manifest,
+    [KERNEL_BACKUP_DATA_MEMBER]: data,
+  }, { level: 6 }));
+  if (archive.byteLength > MAX_BACKUP_BYTES) {
+    throw Object.assign(new Error("Kernel backup ZIP exceeds the backup limit"), { status: 413 });
+  }
+  return archive;
+}
+
+function parseKernelBackupFile(bytes) {
+  if (!isZipBuffer(bytes)) {
+    // Keep existing operator archives restorable after the format transition.
+    return parseUtf8Json(bytes, "Legacy Kernel backup");
+  }
+  const allowedMembers = new Set(["manifest.json", KERNEL_BACKUP_DATA_MEMBER]);
+  let memberCount = 0;
+  let uncompressedBytes = 0;
+  let archive;
+  try {
+    archive = unzipSync(new Uint8Array(bytes), {
+      filter(member) {
+        memberCount += 1;
+        if (memberCount > allowedMembers.size || !allowedMembers.has(member.name)) {
+          throw Object.assign(new Error("Kernel backup ZIP contains an unknown member"), { status: 400 });
+        }
+        const maximum = member.name === "manifest.json"
+          ? MAX_BACKUP_MANIFEST_BYTES
+          : MAX_BACKUP_BYTES;
+        if (member.originalSize <= 0 || member.originalSize > maximum) {
+          throw Object.assign(new Error("Kernel backup ZIP member exceeds its size limit"), { status: 413 });
+        }
+        if (member.size > 0 && member.originalSize / member.size > MAX_BACKUP_COMPRESSION_RATIO) {
+          throw Object.assign(new Error("Kernel backup ZIP compression ratio is unsafe"), { status: 400 });
+        }
+        uncompressedBytes += member.originalSize;
+        if (uncompressedBytes > MAX_BACKUP_BYTES + MAX_BACKUP_MANIFEST_BYTES) {
+          throw Object.assign(new Error("Kernel backup ZIP exceeds its uncompressed size limit"), { status: 413 });
+        }
+        return true;
+      },
+    });
+  } catch (error) {
+    if (error?.status) throw error;
+    throw Object.assign(new Error("Kernel backup must be a valid ZIP archive"), { status: 400 });
+  }
+  if (Object.keys(archive).length !== allowedMembers.size) {
+    throw Object.assign(new Error("Kernel backup ZIP is incomplete"), { status: 400 });
+  }
+  const manifest = parseUtf8Json(archive["manifest.json"], "Kernel backup manifest");
+  const data = archive[KERNEL_BACKUP_DATA_MEMBER];
+  const descriptor = manifest?.files?.[KERNEL_BACKUP_DATA_MEMBER];
+  const checksum = createHash("sha256").update(data).digest("hex");
+  if (
+    manifest?.format !== KERNEL_BACKUP_ARCHIVE_FORMAT
+    || Number(manifest?.schema_version) !== 1
+    || manifest?.scope !== "complete"
+    || manifest?.restore_mode !== "replace"
+    || descriptor?.uncompressed_bytes !== data.byteLength
+    || !/^[a-f0-9]{64}$/.test(descriptor?.sha256 ?? "")
+    || descriptor.sha256 !== checksum
+  ) {
+    throw Object.assign(new Error("Kernel backup manifest or member checksum is invalid"), { status: 400 });
+  }
+  return parseUtf8Json(data, "Kernel backup data");
 }
 
 function validateMarkdown(file, type) {
@@ -909,10 +1010,14 @@ export function createKernelApp(options) {
   });
 
   app.get("/api/backup", requireOperator, (_req, res) => {
-    store.audit("operator", "backup.download", "kernel", "success", {});
-    res.setHeader("Content-Type", "application/json; charset=utf-8");
-    res.setHeader("Content-Disposition", `attachment; filename="kernel-backup-${new Date().toISOString().slice(0, 10)}.json"`);
-    res.send(JSON.stringify(store.exportBackup(), null, 2));
+    const archive = buildKernelBackupArchive(store.exportBackup(), version);
+    const checksum = createHash("sha256").update(archive).digest("hex");
+    store.audit("operator", "backup.download", "kernel", "success", { checksum });
+    res.setHeader("Cache-Control", "no-store, private");
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Length", String(archive.byteLength));
+    res.setHeader("Content-Disposition", `attachment; filename="kernel-backup-${new Date().toISOString().slice(0, 10)}.zip"`);
+    res.send(archive);
   });
 
   const stagedBackupDir = path.join(dataDir, "pre-update-backups");
@@ -920,7 +1025,7 @@ export function createKernelApp(options) {
     fs.mkdirSync(stagedBackupDir, { recursive: true });
     const cutoff = Date.now() - 24 * 60 * 60 * 1000;
     const entries = fs.readdirSync(stagedBackupDir, { withFileTypes: true })
-      .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+      .filter((entry) => entry.isFile() && (entry.name.endsWith(".zip") || entry.name.endsWith(".json")))
       .map((entry) => {
         const target = path.join(stagedBackupDir, entry.name);
         return { target, modified: fs.statSync(target).mtimeMs };
@@ -935,12 +1040,12 @@ export function createKernelApp(options) {
     try {
       pruneStagedBackups();
       const id = randomUUID();
-      const filename = `kernel-pre-update-${id}.json`;
-      const backupBody = Buffer.from(JSON.stringify(store.exportBackup(), null, 2));
+      const filename = `kernel-pre-update-${id}.zip`;
+      const backupBody = buildKernelBackupArchive(store.exportBackup(), version);
       if (backupBody.byteLength > MAX_BACKUP_BYTES) {
         throw Object.assign(new Error("Kernel backup exceeds the updater limit"), { status: 413 });
       }
-      const target = path.join(stagedBackupDir, `${id}.json`);
+      const target = path.join(stagedBackupDir, `${id}.zip`);
       fs.writeFileSync(`${target}.tmp`, backupBody, { mode: 0o600 });
       fs.renameSync(`${target}.tmp`, target);
       const checksum = createHash("sha256").update(backupBody).digest("hex");
@@ -961,11 +1066,11 @@ export function createKernelApp(options) {
       if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) {
         throw Object.assign(new Error("Backup ID is invalid"), { status: 400 });
       }
-      const target = path.join(stagedBackupDir, `${req.params.id}.json`);
+      const target = path.join(stagedBackupDir, `${req.params.id}.zip`);
       if (!fs.existsSync(target)) {
         throw Object.assign(new Error("Staged backup was not found"), { status: 404 });
       }
-      res.download(target, `kernel-pre-update-${req.params.id}.json`);
+      res.download(target, `kernel-pre-update-${req.params.id}.zip`);
     } catch (error) {
       next(error);
     }
@@ -993,7 +1098,7 @@ export function createKernelApp(options) {
       if (!/^[0-9a-f-]{36}$/i.test(backupId)) {
         throw Object.assign(new Error("Download a fresh Kernel backup before installing"), { status: 400 });
       }
-      const backupPath = path.join(stagedBackupDir, `${backupId}.json`);
+      const backupPath = path.join(stagedBackupDir, `${backupId}.zip`);
       if (!fs.existsSync(backupPath)) {
         throw Object.assign(new Error("The staged Kernel backup is unavailable"), { status: 409 });
       }
@@ -1008,7 +1113,7 @@ export function createKernelApp(options) {
         service: "kernel",
         version: versionToInstall,
         backup: {
-          filename: `kernel-pre-update-${backupId}.json`,
+          filename: `kernel-pre-update-${backupId}.zip`,
           sha256: checksum,
           data_base64: backupBody.toString("base64"),
         },
@@ -1048,15 +1153,9 @@ export function createKernelApp(options) {
     (req, res, next) => {
       try {
         if (!req.file) {
-          throw Object.assign(new Error("Select a Kernel backup JSON file"), { status: 400 });
+          throw Object.assign(new Error("Select a Kernel backup ZIP file"), { status: 400 });
         }
-        let backup;
-        try {
-          const content = new TextDecoder("utf-8", { fatal: true }).decode(req.file.buffer);
-          backup = JSON.parse(content);
-        } catch {
-          throw Object.assign(new Error("Backup must be valid UTF-8 JSON"), { status: 400 });
-        }
+        const backup = parseKernelBackupFile(req.file.buffer);
         res.json(store.importBackup(backup, safeActor(req)));
       } catch (error) {
         next(error);
@@ -1081,8 +1180,7 @@ export function createKernelApp(options) {
         if (!req.file) {
           throw Object.assign(new Error("Kernel backup file is required"), { status: 400 });
         }
-        const content = new TextDecoder("utf-8", { fatal: true }).decode(req.file.buffer);
-        res.json(store.importBackup(JSON.parse(content), "updater"));
+        res.json(store.importBackup(parseKernelBackupFile(req.file.buffer), "updater"));
       } catch (error) {
         next(error);
       }

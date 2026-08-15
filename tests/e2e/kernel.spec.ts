@@ -143,6 +143,7 @@ test("Topology uses visual-only Open Node", async ({ page }) => {
 });
 
 test("document Node exposes browser open and persists downloaded bytes", async ({ page }) => {
+  test.setTimeout(45_000);
   await navigate(page, "Topology Map");
   const canvas = page.getByLabel("Infinite graph canvas");
   await canvas.dblclick({ position: { x: 520, y: 280 } });
@@ -165,8 +166,48 @@ test("document Node exposes browser open and persists downloaded bytes", async (
   await expect(documentNode.getByRole("button", { name: "Download" })).toBeVisible();
   await expect(page.locator(".topology-meta")).toContainText("Saved");
 
+  const documentId = await documentNode.getAttribute("data-node-id");
+  if (!documentId) throw new Error("Document Node id is unavailable");
+  const canvasBox = await canvas.boundingBox();
+  if (!canvasBox) throw new Error("Topology canvas geometry is unavailable");
+  await canvas.dispatchEvent("dblclick", {
+    bubbles: true,
+    button: 0,
+    clientX: canvasBox.x + 120,
+    clientY: canvasBox.y + 120,
+  });
+  await page.getByRole("button", { name: /Containers/ }).click();
+  await page.locator(".on-library-tile", { hasText: "Empty Container" }).dblclick();
+  const container = page.locator(".on-container").last();
+  const containerHeader = container.locator("> header");
+  const initialContainerBox = await containerHeader.boundingBox();
+  if (!initialContainerBox) throw new Error("Topology geometry is unavailable");
+  await page.mouse.move(initialContainerBox.x + initialContainerBox.width / 2, initialContainerBox.y + initialContainerBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(canvasBox.x + canvasBox.width * 0.74, canvasBox.y + 290, { steps: 8 });
+  await page.mouse.up();
+
+  const nodeHeader = documentNode.locator("> header");
+  const nodeBox = await nodeHeader.boundingBox();
+  const targetBox = await container.boundingBox();
+  if (!nodeBox || !targetBox) throw new Error("Document container drop geometry is unavailable");
+  await page.mouse.move(nodeBox.x + nodeBox.width / 2, nodeBox.y + nodeBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + 100, { steps: 12 });
+  await page.mouse.up();
+
+  await expect(page.locator(`.on-world > .on-node[data-node-id='${documentId}']`)).toHaveCount(0);
+  const containedDocument = container.locator(`.on-contained-node.is-browser-document[data-node-id='${documentId}']`);
+  await expect(containedDocument).toContainText("architecture-guide.md");
+  await expect(containedDocument.getByRole("button", { name: "Open" })).toBeVisible();
+  await expect(containedDocument.getByRole("button", { name: "Download" })).toBeVisible();
+  await expect(containedDocument.getByText("Replace", { exact: true })).toBeVisible();
+  await canvas.focus();
+  await page.keyboard.press("Control+s");
+  await expect(page.locator(".topology-meta")).toContainText("Saved");
+
   const downloadPromise = page.waitForEvent("download");
-  await documentNode.getByRole("button", { name: "Download" }).click();
+  await containedDocument.getByRole("button", { name: "Download" }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe("architecture-guide.md");
   const downloadPath = await download.path();
@@ -174,9 +215,11 @@ test("document Node exposes browser open and persists downloaded bytes", async (
   expect(await readFile(downloadPath, "utf8")).toBe(contents);
 
   await page.reload();
-  const restored = page.locator(".on-world > .on-node[data-node-type-id='exocortex.architecture.document']").last();
+  const restored = page.locator(`.on-contained-node.is-browser-document[data-node-id='${documentId}']`);
   await expect(restored).toContainText("architecture-guide.md");
+  await expect(restored.getByRole("button", { name: "Open" })).toBeVisible();
   await expect(restored.getByRole("button", { name: "Download" })).toBeVisible();
+  await expect(restored.getByText("Replace", { exact: true })).toBeVisible();
 });
 
 test("compatible architecture Nodes can be dropped into Containers", async ({ page }) => {
@@ -205,7 +248,7 @@ test("compatible architecture Nodes can be dropped into Containers", async ({ pa
   await canvas.dblclick({ position: { x: 120, y: 120 } });
   await page.getByRole("button", { name: /Nodes/ }).click();
   await page.locator(".on-library-tile", { hasText: "module" }).dblclick();
-  const topLevelNode = page.locator(".on-world > .on-node").last();
+  const topLevelNode = page.locator(".on-world > .on-node[data-node-type-id='exocortex.architecture.module']").last();
   await expect(topLevelNode).toBeVisible();
   const topLevelText = topLevelNode.locator("textarea.on-notebook-input");
   const nodeHeader = topLevelNode.locator("> header");
@@ -221,7 +264,7 @@ test("compatible architecture Nodes can be dropped into Containers", async ({ pa
   await page.mouse.up();
 
   await expect(container.locator(".on-contained-node")).toHaveCount(containedBefore + 1);
-  const containedNode = container.locator(".on-contained-node").last();
+  const containedNode = container.locator(".on-contained-node[data-node-type-id='exocortex.architecture.module']").last();
   const containedText = containedNode.locator("textarea.on-notebook-input");
   await expect(containedText).toBeVisible();
   const containedNodeBox = await containedNode.boundingBox();

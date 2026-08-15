@@ -245,6 +245,13 @@
 .on-contained-node.is-text-node .on-contained-node-body { grid-template-columns: minmax(0, 1fr); padding-inline: 22px; }
 .on-contained-node.is-text-node .is-inputs, .on-contained-node.is-text-node .is-outputs { display: none; }
 .on-contained-node.is-text-node .on-contained-node-parameters { width: 100%; }
+.on-contained-node.is-browser-document .on-contained-node-body { display: block; padding: 5px 8px; }
+.on-contained-node.is-browser-document .on-browser-document { height: 100%; gap: 4px; padding: 4px 6px; }
+.on-contained-node.is-browser-document .on-browser-document-file { grid-template-columns: 24px minmax(0, 1fr); gap: 6px; }
+.on-contained-node.is-browser-document .on-browser-document-file > span { width: 24px; height: 24px; font-size: 7px; }
+.on-contained-node.is-browser-document .on-browser-document-file small { margin-top: 1px; font-size: 7px; }
+.on-contained-node.is-browser-document .on-browser-document-actions { flex-wrap: nowrap; gap: 4px; }
+.on-contained-node.is-browser-document .on-browser-document-actions button { flex-basis: 0; padding: 3px 4px; font-size: 7px; }
 .on-contained-node-parameters .on-param-summary { gap: 3px; padding: 2px 3px; }
 .on-contained-node-parameters .on-param-summary span { font-size: 7px; }
 .on-contained-node-parameters .on-param-summary input:not([type="checkbox"]), .on-contained-node-parameters .on-param-summary select { width: 52%; height: 19px; padding: 1px 3px; font-size: 8px; }

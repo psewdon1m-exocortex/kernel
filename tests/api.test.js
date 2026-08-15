@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
-import { strFromU8, unzipSync } from "fflate";
+import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import request from "supertest";
 import { createKernelApp } from "../server/app.js";
 import { registerChecksum } from "../server/machine-contract.js";
@@ -17,8 +17,10 @@ describe("Kernel API", () => {
   let app;
   let agent;
   let dataDir;
+  let submittedUpdatePayload;
 
   beforeEach(async () => {
+    submittedUpdatePayload = undefined;
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "kernel-test-"));
     app = createKernelApp({
       dataDir,
@@ -58,6 +60,7 @@ describe("Kernel API", () => {
           };
         },
         async createUpdate(payload) {
+          submittedUpdatePayload = payload;
           return {
             id: "job-kernel-1",
             service: payload.service,
@@ -489,21 +492,57 @@ describe("Kernel API", () => {
     assert.equal(updaterStatus.body.available, true);
     const stagedBackup = await agent.post("/api/backups");
     assert.equal(stagedBackup.status, 201);
-    const stagedDownload = await agent.get(stagedBackup.body.download_url);
+    const stagedDownload = await agent
+      .get(stagedBackup.body.download_url)
+      .buffer(true)
+      .parse((response, callback) => {
+        const chunks = [];
+        response.on("data", (chunk) => chunks.push(chunk));
+        response.on("end", () => callback(null, Buffer.concat(chunks)));
+      });
     assert.equal(stagedDownload.status, 200);
+    assert.match(stagedDownload.headers["content-type"], /^application\/zip/);
+    assert.match(stagedDownload.headers["content-disposition"], /kernel-pre-update-[0-9a-f-]+\.zip/);
+    const stagedArchive = unzipSync(new Uint8Array(stagedDownload.body));
+    assert.ok(stagedArchive["manifest.json"]);
+    assert.ok(stagedArchive["data/kernel.json"]);
     const install = await agent
       .post("/api/updater/install")
       .send({ version: "0.2.0", backup_id: stagedBackup.body.id });
     assert.equal(install.status, 202);
     assert.equal(install.body.state, "REQUESTED");
+    assert.match(submittedUpdatePayload.backup.filename, /\.zip$/);
+    const updaterArchive = unzipSync(Buffer.from(submittedUpdatePayload.backup.data_base64, "base64"));
+    assert.ok(updaterArchive["manifest.json"]);
+    assert.ok(updaterArchive["data/kernel.json"]);
     const job = await agent.get("/api/updater/jobs/job-kernel-1");
     assert.equal(job.body.state, "COMPLETED");
     assert.equal(update.body.update_available, true);
     assert.equal(update.body.repository_url, "https://github.com/psewdon1m-exocortex/kernel");
 
-    const backup = await agent.get("/api/backup");
+    const backup = await agent
+      .get("/api/backup")
+      .buffer(true)
+      .parse((response, callback) => {
+        const chunks = [];
+        response.on("data", (chunk) => chunks.push(chunk));
+        response.on("end", () => callback(null, Buffer.concat(chunks)));
+      });
     assert.equal(backup.status, 200);
-    const initialRegister = backup.body.register.current;
+    assert.match(backup.headers["content-type"], /^application\/zip/);
+    assert.match(backup.headers["content-disposition"], /kernel-backup-\d{4}-\d{2}-\d{2}\.zip/);
+    const backupArchive = unzipSync(new Uint8Array(backup.body));
+    const backupManifest = JSON.parse(strFromU8(backupArchive["manifest.json"]));
+    const backupData = backupArchive["data/kernel.json"];
+    const backupPayload = JSON.parse(strFromU8(backupData));
+    assert.equal(backupManifest.format, "exocortex-kernel-backup-archive");
+    assert.equal(backupManifest.schema_version, 1);
+    assert.equal(backupManifest.files["data/kernel.json"].uncompressed_bytes, backupData.byteLength);
+    assert.equal(
+      backupManifest.files["data/kernel.json"].sha256,
+      createHash("sha256").update(backupData).digest("hex"),
+    );
+    const initialRegister = backupPayload.register.current;
     const current = await agent.get("/api/register");
     const kernelPort = current.body.entries.find((item) => item.key === "services.kernel.port");
     await agent
@@ -512,13 +551,35 @@ describe("Kernel API", () => {
 
     const restored = await agent
       .post("/api/backup/restore")
-      .attach("file", Buffer.from(JSON.stringify(backup.body)), {
-        filename: "kernel-backup.json",
-        contentType: "application/json",
+      .attach("file", backup.body, {
+        filename: "kernel-backup.zip",
+        contentType: "application/zip",
       });
     assert.equal(restored.status, 200);
     const after = await agent.get("/api/register");
     assert.equal(after.body.values["services.kernel.port"], initialRegister.values["services.kernel.port"]);
     assert.notEqual(after.body.revision, initialRegister.revision);
+
+    const tamperedData = strToU8(JSON.stringify({ ...backupPayload, created_at: "tampered" }));
+    const tamperedArchive = zipSync({
+      "manifest.json": backupArchive["manifest.json"],
+      "data/kernel.json": tamperedData,
+    });
+    const rejected = await agent
+      .post("/api/backup/restore")
+      .attach("file", Buffer.from(tamperedArchive), {
+        filename: "tampered-kernel-backup.zip",
+        contentType: "application/zip",
+      });
+    assert.equal(rejected.status, 400);
+    assert.match(rejected.body.error, /checksum/i);
+
+    const legacy = await agent
+      .post("/api/backup/restore")
+      .attach("file", Buffer.from(JSON.stringify(backupPayload)), {
+        filename: "legacy-kernel-backup.json",
+        contentType: "application/json",
+      });
+    assert.equal(legacy.status, 200);
   });
 });

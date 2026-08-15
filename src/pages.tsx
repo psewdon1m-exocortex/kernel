@@ -887,7 +887,7 @@ export function SettingsPage({
                 ref={backupInputRef}
                 hidden
                 type="file"
-                accept=".json,application/json"
+                accept=".zip,application/zip,.json,application/json"
                 disabled={backupPending}
                 onChange={(event) => setBackupFile(event.target.files?.[0])}
               />

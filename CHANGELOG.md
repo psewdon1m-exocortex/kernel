@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+## 0.2.3
+
+- Export operator and pre-update Kernel backups as bounded ZIP archives with a
+  machine-readable manifest and a verified SHA-256 data-member checksum.
+- Keep legacy JSON backup imports available during the ZIP format transition.
+- Allow document Nodes with attached files inside Containers while retaining
+  their compact file metadata and Open, Download and Replace actions.
+
 ## 0.2.2
 
 - Restore detached Sigstore release bundles for compatibility with production

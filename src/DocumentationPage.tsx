@@ -155,8 +155,8 @@ docker compose ps`}</pre>
     search: "backup archive zip download restore recovery revision database",
     content: (
       <>
-        <p>Create Backup produces a downloadable ZIP containing the persistent system state and a machine-readable manifest. Store the archive as sensitive operational material.</p>
-        <p>Import Backup validates the archive before replacing live state. Always preserve a separate copy and verify the restored Dashboard, documents, Register revision, and settings.</p>
+        <p>Create Backup produces a downloadable ZIP containing <code>manifest.json</code> and the persistent Kernel state as a checksummed data member. Store the archive as sensitive operational material.</p>
+        <p>Import Backup validates archive bounds, its allow-listed members and SHA-256 before replacing live state. Legacy Kernel JSON backups remain importable for migration. Always preserve a separate copy and verify the restored Dashboard, documents, Register revision, and settings.</p>
       </>
     ),
   },
