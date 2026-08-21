@@ -20,6 +20,12 @@ generates the session, service and updater tokens. It never generates the
 operator username or password. Nginx, certificates, DNS and firewall policy
 are intentionally handled separately through Sindri.
 
+The release bundle contains an independent `nginx.security.conf`. Include it
+inside Kernel's public HTTPS `server {}` block (for example,
+`include /opt/exocortex/kernel/nginx.security.conf;`) and validate with
+`nginx -t` before reload. It hides health, updater and documentation endpoints
+and rejects probe paths before proxying them to Kernel.
+
 Пассивный registry-сервис для одного VPS:
 
 - Dashboard с CPU, RAM, Disk и system uptime;

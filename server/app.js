@@ -43,6 +43,14 @@ const ALLOWED_COLOR = /^#[0-9a-f]{6}$/i;
 const MANAGED_SERVICE_TOKEN_KEY = "services.kernel.service_token";
 const BROWSER_DOCUMENT_NODE_TYPE = "exocortex.architecture.document";
 const BROWSER_DOCUMENT_KINDS = new Set(["pdf", "markdown", "docx", "graph"]);
+const ROBOTS_POLICY = fs.readFileSync(path.join(ROOT, "server", "robots.txt"), "utf8");
+const PROXY_IDENTITY_HEADERS = [
+  "forwarded",
+  "x-forwarded-for",
+  "x-real-ip",
+  "cf-connecting-ip",
+];
+const BLOCKED_PROBE_PATH = /(^|\/)\.|\.(?:env|ini|log|sql|bak|backup|old|swp|zip|tar|gz)$/i;
 
 function serializeError(error) {
   if (!error || typeof error !== "object") {
@@ -392,6 +400,10 @@ function requestOriginMatches(req) {
   }
 }
 
+function isProxiedRequest(req) {
+  return PROXY_IDENTITY_HEADERS.some((name) => Boolean(req.get(name)));
+}
+
 export function createKernelApp(options) {
   const {
     dataDir = path.join(ROOT, "data"),
@@ -445,6 +457,7 @@ export function createKernelApp(options) {
   if (trustProxy) app.set("trust proxy", 1);
   app.use((req, res, next) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive, nosnippet");
     res.setHeader("X-Frame-Options", "DENY");
     res.setHeader("Referrer-Policy", "no-referrer");
     res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
@@ -452,6 +465,9 @@ export function createKernelApp(options) {
       "Content-Security-Policy",
       "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
     );
+    if (BLOCKED_PROBE_PATH.test(req.path)) {
+      return res.status(404).json({ error: "Not found" });
+    }
     next();
   });
   app.use(express.json({ limit: MAX_TOPOLOGY_BYTES }));
@@ -565,7 +581,12 @@ export function createKernelApp(options) {
     return false;
   }
 
-  app.get("/api/health", (_req, res) => {
+  app.get("/robots.txt", (_req, res) => {
+    res.type("text/plain").send(ROBOTS_POLICY);
+  });
+
+  app.get("/api/health", (req, res) => {
+    if (isProxiedRequest(req)) return res.status(404).json({ error: "Not found" });
     res.json({ status: "ok", service: "exocortex-kernel", version });
   });
 
@@ -574,7 +595,8 @@ export function createKernelApp(options) {
     res.json({ colors });
   });
 
-  app.get("/api/v1/health", (_req, res) => {
+  app.get("/api/v1/health", (req, res) => {
+    if (isProxiedRequest(req)) return res.status(404).json({ error: "Not found" });
     res.json({
       schema: "exocortex.kernel.health.v1",
       status: "ok",
@@ -1221,14 +1243,14 @@ export function createKernelApp(options) {
 
   if (fs.existsSync(distDir)) {
     app.use(express.static(distDir, {
-      dotfiles: "allow",
+      dotfiles: "deny",
       etag: true,
       maxAge: "1h",
       index: false,
     }));
     app.use((req, res, next) => {
-      if (req.method !== "GET" || req.path.startsWith("/api/")) return next();
-      res.sendFile(path.join(distDir, "index.html"), { dotfiles: "allow" });
+      if (req.method !== "GET" || req.path !== "/") return next();
+      res.sendFile(path.join(distDir, "index.html"), { dotfiles: "deny" });
     });
   }
 

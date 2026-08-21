@@ -308,25 +308,6 @@ function LoginScreen({
   const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
-  const [available, setAvailable] = useState(true);
-
-  useEffect(() => {
-    let active = true;
-    const checkAvailability = async () => {
-      try {
-        const health = await api<{ status: string }>("/api/health");
-        if (active) setAvailable(health.status === "ok");
-      } catch {
-        if (active) setAvailable(false);
-      }
-    };
-    void checkAvailability();
-    const timer = window.setInterval(() => void checkAvailability(), 5_000);
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-    };
-  }, []);
 
   const login = async (event: FormEvent) => {
     event.preventDefault();
@@ -342,7 +323,6 @@ function LoginScreen({
       setPassword("");
     } catch (error) {
       const message = (error as Error).message;
-      if (!(error instanceof ApiError)) setAvailable(false);
       setError(message);
       notify(message, "error");
     } finally {
@@ -360,12 +340,12 @@ function LoginScreen({
             ))}
           </h1>
           <div
-            className={`login-availability ${available ? "is-available" : "is-unavailable"}`}
+            className="login-availability is-available"
             role="status"
             aria-live="polite"
           >
-            {available && <span className="login-availability-spinner" aria-hidden="true" />}
-            <span>{available ? "AVAILABLE" : "UNAVAILABLE"}</span>
+            <span className="login-availability-spinner" aria-hidden="true" />
+            <span>AVAILABLE</span>
           </div>
         </header>
         <form

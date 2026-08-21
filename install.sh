@@ -102,7 +102,7 @@ validate_install() {
     echo "Cannot pull the Kernel image. Make the GHCR package public or authenticate Docker to ghcr.io." >&2
     exit 14
   }
-  set_env UPDATER_PUBLIC_HEALTH_URL "${public_url%/}/api/health"
+  set_env UPDATER_PUBLIC_HEALTH_URL ""
 }
 
 install_kernel() {

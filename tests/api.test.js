@@ -93,10 +93,19 @@ describe("Kernel API", () => {
     return response;
   }
 
-  test("health is public while data is protected", async () => {
+  test("local health, crawler policy and protected data have independent boundaries", async () => {
+    const robots = await request(app).get("/robots.txt");
+    assert.equal(robots.status, 200);
+    assert.equal(robots.text, "User-agent: *\nDisallow: /\n");
+    assert.equal(robots.headers["x-robots-tag"], "noindex, nofollow, noarchive, nosnippet");
+
     const health = await request(app).get("/api/health");
     assert.equal(health.status, 200);
     assert.equal(health.body.status, "ok");
+    const publicHealth = await request(app)
+      .get("/api/health")
+      .set("X-Forwarded-For", "203.0.113.10");
+    assert.equal(publicHealth.status, 404);
 
     const appearance = await request(app).get("/api/appearance");
     assert.equal(appearance.status, 200);
@@ -106,6 +115,32 @@ describe("Kernel API", () => {
 
     const dashboard = await request(app).get("/api/dashboard");
     assert.equal(dashboard.status, 401);
+    assert.equal(dashboard.headers["x-robots-tag"], "noindex, nofollow, noarchive, nosnippet");
+  });
+
+  test("SPA shell is served only for the root route", async () => {
+    const distDir = path.join(dataDir, "dist");
+    fs.mkdirSync(distDir);
+    fs.writeFileSync(distDir + path.sep + "index.html", "<!doctype html><title>kernel shell</title>");
+    const shellApp = createKernelApp({
+      dataDir: path.join(dataDir, "shell-data"),
+      defaultsDir: path.resolve("data/defaults"),
+      distDir,
+      adminUsername: ADMIN_USERNAME,
+      adminPassword: ADMIN_PASSWORD,
+      sessionSecret: "test-session-secret-at-least-32-characters",
+      apiToken: API_TOKEN,
+    });
+    try {
+      assert.equal((await request(shellApp).get("/")).status, 200);
+      for (const probe of ["/.env", "/wp-admin", "/phpmyadmin", "/.git/config"]) {
+        const response = await request(shellApp).get(probe);
+        assert.equal(response.status, 404, probe);
+        assert.deepEqual(response.body, { error: "Not found" });
+      }
+    } finally {
+      shellApp.locals.kernel.close();
+    }
   });
 
   test("operator can authenticate and read dashboard", async () => {
