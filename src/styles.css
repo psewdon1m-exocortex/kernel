@@ -219,7 +219,7 @@ strong, b, .metric-main, .section-title { font-weight: 700; }
 [data-settings-section="security"] { min-height: 560px; }
 .security-content { display: grid; gap: 42px; }
 [data-settings-section="backup"] { min-height: 782px; }
-.backup-content { display: grid; gap: 42px; padding: 30px 38px 50px; }
+.backup-content { display: grid; gap: 38px; padding: 30px 38px 50px; }
 .backup-content .settings-group h3, .updates-content .settings-group h3 { line-height: 1.2; }
 .backup-content .settings-group > p { margin-bottom: 16px; }
 .backup-neptune-group > p { margin-bottom: 12px !important; }
