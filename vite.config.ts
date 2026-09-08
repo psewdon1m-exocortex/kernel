@@ -12,7 +12,11 @@ export default defineConfig({
     port: 18181,
     strictPort: true,
     proxy: {
-      "/api": "http://127.0.0.1:18180",
+      "/api": {
+        target: "http://127.0.0.1:18180",
+        changeOrigin: false,
+        xfwd: true,
+      },
     },
   },
 });

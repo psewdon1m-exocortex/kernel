@@ -264,23 +264,19 @@ Register — не документ и не YAML-файл. Это структу�
 Примеры:
 
 ```text
-repositories.kernel.url                  → https://github.com/example/exocortex-kernel
-repositories.perimetr.url                → https://github.com/example/exocortex-perimetr
-repositories.agent.url                   → https://github.com/example/exocortex-agent
-repositories.pod.url                     → https://github.com/example/exocortex-pod
-repositories.sindri.url                  → https://github.com/example/exocortex-sindri
-repositories.updater.url                 → https://github.com/example/exocortex-updater
-services.kernel.sni                      → kernel.example.com
-services.kernel.port                     → 443
-services.kernel.service_token            → <distributed service token>
-services.perimetr.sni                    → perimetr.example.com
-services.perimetr.port                   → 443
-intervals.kernel.refresh_sec             → 60
+repositories.kernel.url                  → volt://<entry-id>/<field-id>
+repositories.perimetr.url                → volt://<entry-id>/<field-id>
+services.kernel.sni                      → volt://<entry-id>/<field-id>
+services.kernel.port                     → volt://<entry-id>/<field-id>
+services.perimetr.sni                    → volt://<entry-id>/<field-id>
+services.perimetr.port                   → volt://<entry-id>/<field-id>
+intervals.kernel.refresh_sec             → volt://<entry-id>/<field-id>
 ```
 
-Repository URLs and client-facing Kernel/Perimetr ports are central Register
-values retained in each client's last-known-good snapshot. A client combines
-the service SNI and port from Register with the fixed route contract. Register
+Repository URLs and client-facing Kernel/Perimetr ports are central values in
+Volt. Register retains only their references in each client's last-known-good
+snapshot. A client resolves the required keys through Kernel, keeps the results
+only in memory, and combines the service SNI and port with the fixed route contract. Register
 never changes a running listener: `KERNEL_LISTEN_PORT` and
 `PERIMETR_LISTEN_PORT` are changed manually during deployment, followed by a
 container restart. Agent's listener port remains device-local. Stable route
@@ -341,15 +337,15 @@ Checksum — SHA-256 от UTF-8 JSON без пробелов в форме `{"va
 
 1. периодически запрашивают snapshot;
 2. проверяют структуру и checksum;
-3. сохраняют его локально;
-4. применяют новую ревизию;
-5. используют last-known-good при ошибке или недоступности Kernel.
+3. сохраняют локально только reference snapshot;
+4. разрешают необходимые ключи через Kernel и держат результат только в памяти;
+5. применяют новую ревизию; новый процесс без Kernel и Volt не запускается.
 
 Kernel не отправляет уведомления и не вызывает клиентов.
 
 ### 10.2 Запрещённые значения
 
-Register не хранит, кроме явно описанного bootstrap-исключения ниже:
+Register не хранит:
 
 - пароли;
 - API tokens;
@@ -360,13 +356,12 @@ Register не хранит, кроме явно описанного bootstrap-�
 - seed phrases;
 - любые значения, дающие прямой доступ.
 
-Единственное разрешённое исключение для закрытой сети одного VPS:
-`services.kernel.service_token`. Локальный `KERNEL_SERVICE_TOKEN` остаётся
-bootstrap trust anchor и продолжает приниматься, поэтому сервис может
-аутентифицироваться до чтения распределённого значения.
+Исключений для bootstrap-токенов нет. Локальный `KERNEL_SERVICE_TOKEN` остаётся
+runtime trust anchor и никогда не копируется в Register.
 
-Secret references допустимы только как неавторизующие идентификаторы, например
-`secret://global/storage`.
+Единственный допустимый формат любого значения Register — неавторизующая ссылка
+`volt://<entry-id>/<field-id>`. Реальное значение, открытое или секретное,
+хранится в Volt.
 
 ## 11. Settings
 
@@ -547,9 +542,10 @@ Kernel готов, если:
 13. Read API возвращает revision metadata.
 14. Внутренние системы могут читать опубликованные документы и Register
     snapshot, но Kernel сам их не вызывает.
-15. Недоступность Kernel не требует остановки клиентов.
-16. Register не хранит секреты, кроме явно разрешённого
-    `services.kernel.service_token`.
+15. Уже работающий клиент может пережить недоступность Kernel на разрешённых
+    значениях в памяти; новый процесс без Kernel и Volt не запускается.
+16. Register хранит только строгие `volt://<entry-id>/<field-id>` ссылки и не
+    содержит `services.kernel.service_token` или других bootstrap credentials.
 17. UI следует `../UNIFICATION_SPECIFICATION.md`.
 18. Интерфейс работает с клавиатурой и на узком viewport без overlap.
 19. Мутации фиксируются в audit.

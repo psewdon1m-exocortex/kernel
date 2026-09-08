@@ -15,7 +15,13 @@ env:
   UPDATER_REPOSITORY: ${{ vars.UPDATER_REPOSITORY || 'psewdon1m-exocortex/updater' }}
 
 jobs:
+  quality-gate:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+
   release:
+    needs: quality-gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -80,6 +86,8 @@ jobs:
             -e KERNEL_ADMIN_PASSWORD=release-test-password \
             -e KERNEL_SESSION_SECRET=release-test-session-secret-32-characters \
             -e KERNEL_SERVICE_TOKEN=release-test-token-24-characters \
+            -e VOLT_URL=http://127.0.0.1:18184 \
+            -e VOLT_KERNEL_TOKEN=release-test-kernel-to-volt-token-32-characters \
             -e KERNEL_COOKIE_SECURE=false "$image"
           trap 'docker rm -f release-smoke-kernel >/dev/null 2>&1 || true' EXIT
           for _ in {1..30}; do

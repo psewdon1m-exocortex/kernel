@@ -83,6 +83,9 @@ export function createUpdaterClient(socketPath, controlToken = "") {
     createUpdate(payload) {
       return request(socketPath, controlToken, "POST", "/v1/updates", payload, 30_000);
     },
+    updateNeptune(payload) {
+      return request(socketPath, controlToken, "POST", "/v1/components/neptune-linux/update", payload, 300_000);
+    },
     job(id) {
       return request(socketPath, "", "GET", `/v1/jobs/${encodeURIComponent(id)}`);
     },

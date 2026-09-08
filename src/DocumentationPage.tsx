@@ -13,11 +13,11 @@ const SECTIONS: DocumentationSection[] = [
     id: "docs-introduction",
     group: "Get Started",
     title: "Introduction",
-    search: "purpose passive kernel architecture one vps internal services last-known-good cached verified snapshot unavailable",
+    search: "purpose passive kernel architecture one vps internal services volt references resolved memory unavailable last-known-good",
     content: (
       <>
-        <p>Kernel is the passive configuration and governance service for one Exocortex VPS. It accepts requests from authenticated operators and internal services, returns versioned data, and never initiates calls to external systems.</p>
-        <div className="documentation-note">Kernel availability is not a runtime dependency. Every consumer must cache a verified snapshot and continue with its last-known-good revision while Kernel is unavailable.</div>
+        <p>Kernel is the configuration and governance service for one Exocortex VPS. It accepts requests from authenticated operators and internal services and returns versioned data. Its only routine outbound requests are bounded update discovery and allow-listed Dashboard availability probes declared through Register.</p>
+        <div className="documentation-note">Register publishes only Volt references. Consumers resolve them through Kernel and keep actual values in memory; a fresh start requires both Kernel and Volt to be available.</div>
       </>
     ),
   },
@@ -42,17 +42,17 @@ const SECTIONS: DocumentationSection[] = [
     id: "docs-installation",
     group: "Get Started",
     title: "Installation",
-    search: "installation env docker compose nginx login username password token",
+    search: "installation env docker compose nginx access key token",
     content: (
       <>
         <h3>1. Configure Environment</h3>
-        <p>Set the operator login, password, session secret, service token, local application port, canonical public URL, and persistent paths in <code>kernel/.env</code>. TLS certificates and the public SNI belong to the shared host Nginx configuration, not to Kernel.</p>
+        <p>Set the operator Access Key, session secret, service token, local application port, canonical public URL, and persistent paths in <code>kernel/.env</code>. Configure the Volt URL and shared Kernel-to-Volt token after login in Settings → Security. During staged migration, an existing password value remains a valid Access Key verifier. TLS certificates and the public SNI belong to the shared host Nginx configuration, not to Kernel.</p>
         <h3>2. Start Kernel</h3>
         <pre>{`cd kernel
 docker compose up -d --build
 docker compose ps`}</pre>
         <h3>3. Verify</h3>
-        <p>Route the Kernel SNI to its loopback port through the shared host Nginx, open the HTTPS hostname, sign in, and confirm that Dashboard telemetry and Register are available.</p>
+        <p>Route the Kernel SNI to its loopback port through the shared host Nginx, open the HTTPS hostname, sign in, and confirm that Dashboard telemetry, service availability cards and Register are available.</p>
       </>
     ),
   },
@@ -63,9 +63,9 @@ docker compose ps`}</pre>
     search: "first run appearance credentials register backup documents",
     content: (
       <ol>
-        <li>Sign in with the username and password from the environment.</li>
-        <li>Confirm the dark, light, and accent colors in Settings.</li>
-        <li>Review Register values and publish only non-secret shared configuration.</li>
+        <li>Sign in with the Access Key from the environment.</li>
+        <li>Confirm the accent color and Sidebar behavior in Settings. Black, white, success, and danger colors are fixed.</li>
+        <li>Create every actual value in Volt, copy its <code>volt://entry-id/field-id</code> reference, and assign that reference to the matching Register key.</li>
         <li>Upload the current Overview and Constitution from the local device.</li>
         <li>Create and download a complete backup before production use.</li>
       </ol>
@@ -90,12 +90,12 @@ docker compose ps`}</pre>
     search: "register key value snapshot etag checksum revision 304 service token",
     content: (
       <>
-        <p>Register stores shared, changeable configuration such as repository addresses, service SNI names, and client-facing service ports. It must not contain ordinary local settings or general-purpose secrets.</p>
+        <p>Register stores the names and topology of shared configuration, but every stored value is a strict <code>volt://entry-id/field-id</code> reference. The referenced value may be marked open or secret in Volt; Kernel resolves both kinds through the same broker path and never persists the resolved result.</p>
         <table className="documentation-table">
           <thead><tr><th>Consumer</th><th>Request behavior</th><th>Failure behavior</th></tr></thead>
           <tbody>
             <tr><td>Operator</td><td>Reads and edits entries through the web interface.</td><td>The UI reports the request error and preserves entered values.</td></tr>
-            <tr><td>Internal service</td><td>Uses the service token and conditional ETag refresh.</td><td>Continues with a checksum-verified last-known-good snapshot.</td></tr>
+            <tr><td>Internal service</td><td>Reads a reference snapshot, then batch-resolves the keys it needs with the service token.</td><td>May keep an already resolved value in memory, but cannot resolve a fresh process without Kernel and Volt.</td></tr>
           </tbody>
         </table>
         <p>A successful edit publishes a new Register revision. A conditional request returns <code>304 Not Modified</code> when the revision has not changed.</p>
@@ -106,17 +106,16 @@ docker compose ps`}</pre>
     id: "docs-topology",
     group: "Operate",
     title: "Topology Map",
-    search: "topology map open node conceptual visual containers nodes drag save",
+    search: "topology map excalidraw conceptual visual canvas shapes arrows text import export save",
     content: (
       <>
-        <p>Topology Map is a conceptual drawing surface based on the visual layer of Open Node. It does not discover infrastructure, represent live state, or execute nodes.</p>
+        <p>Topology Map is a full-window Excalidraw surface for the human-readable system architecture. It does not discover infrastructure, represent live state, or execute graph elements.</p>
         <ul>
-          <li>The initial Library contains one editable white module Node and one empty Container.</li>
-          <li>Resize a module to resize its empty free-text canvas with it.</li>
-          <li>Place persistent shapes, arrows, brush strokes, and text annotations anywhere on the Canvas.</li>
-          <li>Drag nodes and containers to arrange the conceptual architecture.</li>
-          <li>Place nodes inside containers to establish visual containment.</li>
-          <li>Use the map controls or <code>Ctrl+S</code> to save a new revision.</li>
+          <li>Use shapes, arrows, lines, freehand drawing, text, frames, and embedded images on the infinite Canvas.</li>
+          <li>Use Excalidraw selection, grouping, binding, layers, undo/redo, pan, zoom, and the reusable shape Library.</li>
+          <li>Open or save portable <code>.excalidraw</code> files and export the drawing as PNG or SVG from the native menu.</li>
+          <li>KERNEL autosaves changed scene data and embedded image bytes as immutable server revisions.</li>
+          <li>Use <strong>Save</strong> for an immediate server save and <strong>Versions</strong> to restore an earlier revision as a new active one.</li>
         </ul>
       </>
     ),
@@ -140,11 +139,12 @@ docker compose ps`}</pre>
     search: "settings appearance sidebar documents backup updater logger security",
     content: (
       <ul>
-        <li><strong>Appearance:</strong> dark, light, and accent colors plus Sidebar behavior.</li>
+        <li><strong>Appearance:</strong> accent color preview plus Sidebar behavior.</li>
+        <li><strong>Security:</strong> Access Key rotation and session revocation.</li>
+        <li><strong>Backup:</strong> complete archive creation, direct local-file inspection and confirmed restore, plus Neptune scheduling and Saturn upload.</li>
+        <li><strong>Updates:</strong> independent Kernel Register and local Updater reachability, Kernel release discovery, and a separate Updater version check.</li>
+        <li><strong>Logs:</strong> live bounded audit events, pagination, and diagnostic export.</li>
         <li><strong>Documents:</strong> local upload, revision history, and restore.</li>
-        <li><strong>Backup:</strong> complete archive creation, download, and restore.</li>
-        <li><strong>Updater:</strong> repository refresh and release availability check.</li>
-        <li><strong>Logger:</strong> revision request logging, bounded retention, and diagnostic export.</li>
       </ul>
     ),
   },
@@ -156,7 +156,8 @@ docker compose ps`}</pre>
     content: (
       <>
         <p>Create Backup produces a downloadable ZIP containing <code>manifest.json</code> and the persistent Kernel state as a checksummed data member. Store the archive as sensitive operational material.</p>
-        <p>Import Backup validates archive bounds, its allow-listed members and SHA-256 before replacing live state. Legacy Kernel JSON backups remain importable for migration. Always preserve a separate copy and verify the restored Dashboard, documents, Register revision, and settings.</p>
+        <p>Browse local snapshot archive opens the native file picker directly. Kernel then stages and inspects the selected file, reporting its name, size, format, and creation time without mutating live state. Only explicit confirmation imports it. Archive bounds, allow-listed members, and SHA-256 are checked again during restore. Legacy Kernel JSON backups remain importable for migration.</p>
+        <p>The same section reports local Neptune reachability, controls the Saturn backup schedule, starts an immediate backup, and checks the installed Neptune version for updates.</p>
       </>
     ),
   },
@@ -167,8 +168,8 @@ docker compose ps`}</pre>
     search: "api logger audit retention zip errors json manifest request 304",
     content: (
       <>
-        <p>Logger shows compact operator and internal-service events. Retention is simultaneously bounded by age, event count, and disk usage.</p>
-        <p><code>Download Logs Zip</code> exports raw events, a manifest, and a separate detailed error document. The web stream intentionally shows a shorter error summary.</p>
+        <p>Logs shows compact operator and internal-service events, polls by cursor while visible, pauses when the browser tab is hidden, and loads older pages on demand. Retention is simultaneously bounded by age, event count, and disk usage.</p>
+        <p><code>Download logs ZIP</code> exports raw events, a manifest, and a separate detailed error document. The web stream intentionally shows a shorter error summary.</p>
       </>
     ),
   },

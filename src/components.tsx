@@ -78,13 +78,37 @@ export function Modal({
 
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
-    dialogRef.current?.focus();
+    const dialog = dialogRef.current;
+    const focusable = () => Array.from(dialog?.querySelectorAll<HTMLElement>(
+      "button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href], [tabindex]:not([tabindex='-1'])",
+    ) ?? []).filter((node) => !node.hasAttribute("hidden"));
+    (focusable()[0] ?? dialog)?.focus();
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
+      if (event.key === "Tab") {
+        const items = focusable();
+        if (!items.length) {
+          event.preventDefault();
+          dialog?.focus();
+          return;
+        }
+        const first = items[0];
+        const last = items.at(-1)!;
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
     };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = previousOverflow;
       previous?.focus();
     };
   }, [onClose]);
@@ -226,13 +250,13 @@ export function EntryForm({
         />
       </label>
       <label>
-        <span>Value</span>
+        <span>Volt reference</span>
         <textarea
           required
           maxLength={2048}
           rows={4}
           value={value}
-          placeholder="https://service.internal/api"
+          placeholder="volt://entry-id/field-id"
           onChange={(event) => setValue(event.target.value)}
         />
       </label>
@@ -246,7 +270,7 @@ export function EntryForm({
           onChange={(event) => setDescription(event.target.value)}
         />
       </label>
-      <p className="hint">Secrets are prohibited. Store only a secret://... reference.</p>
+      <p className="hint">Store only a volt://&lt;entry-id&gt;/&lt;field-id&gt; reference. Actual values remain in Volt.</p>
       <div className="dialog-actions">
         <button type="button" disabled={pending} onClick={onClose}>Cancel</button>
         <button type="submit" disabled={pending || !key.trim() || !value.trim()}>

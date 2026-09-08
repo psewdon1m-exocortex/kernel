@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { AssetRegistry } from "@open-node/assets";
 import { CommandHistory } from "@open-node/commands";
 import { registerCoreNodes } from "@open-node/core-nodes";
@@ -23,9 +23,24 @@ beforeAll(() => {
 afterEach(async () => {
   if (root) await act(async () => root.unmount());
   mount?.remove();
+  vi.restoreAllMocks();
 });
 
 describe("OpenNodeEditor interactions", () => {
+  it("keeps read-only embeds navigation-safe for their host page", async () => {
+    const { controller } = makeController();
+    const addListener = vi.spyOn(window, "addEventListener");
+    await render(controller, undefined, { mode: "embedded-readonly", wheelZoomRequiresModifier: true });
+    expect(addListener.mock.calls.some(([type]) => type === "beforeunload")).toBe(false);
+    const canvas = mount.querySelector<HTMLElement>(".on-canvas");
+    const initialZoom = controller.store.project.viewport.zoom;
+    await act(async () => canvas?.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: -120 })));
+    expect(controller.store.project.viewport.zoom).toBe(initialZoom);
+    await act(async () => canvas?.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, ctrlKey: true, deltaY: -120 })));
+    expect(controller.store.project.viewport.zoom).toBeGreaterThan(initialZoom);
+    addListener.mockRestore();
+  });
+
   it("opens the movable Library with Left Alt and closes it on an outside pointer", async () => {
     const { controller } = makeController();
     await render(controller);
@@ -469,11 +484,22 @@ describe("OpenNodeEditor interactions", () => {
   });
 });
 
-async function render(controller: OpenNodeEditorController, onSaveRequest?: (project: OpenNodeProject) => void | Promise<void>): Promise<void> {
+async function render(
+  controller: OpenNodeEditorController,
+  onSaveRequest?: (project: OpenNodeProject) => void | Promise<void>,
+  options: { mode?: "embedded-edit" | "embedded-readonly"; wheelZoomRequiresModifier?: boolean } = {},
+): Promise<void> {
   mount = document.createElement("div");
   document.body.append(mount);
   root = createRoot(mount);
-  await act(async () => root.render(<OpenNodeEditor controller={controller} mode="embedded-edit" onSaveRequest={onSaveRequest} />));
+  await act(async () => root.render(
+    <OpenNodeEditor
+      controller={controller}
+      mode={options.mode ?? "embedded-edit"}
+      onSaveRequest={onSaveRequest}
+      wheelZoomRequiresModifier={options.wheelZoomRequiresModifier}
+    />,
+  ));
 }
 
 function makeController(withGraph = false): { controller: OpenNodeEditorController; nodeId: string; replacementNodeId: string; targetNodeId: string } {

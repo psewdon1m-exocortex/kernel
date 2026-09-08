@@ -348,7 +348,7 @@ Reference Graph хранит связи между ресурсами и поз�
 
 **Open Node** — самостоятельный open-source framework для создания и встраивания нодовых интерфейсов.
 
-Он используется как основа Topology Map внутри Kernel, но не ограничивается этим применением.
+Он остаётся самостоятельным framework и частью архитектуры Exocortex. Текущий интерфейс Topology Map внутри Kernel временно переведён на Excalidraw.
 
 Open Node предоставляет:
 
@@ -366,7 +366,7 @@ Open Node предоставляет:
 - Machine API и будущий MCP adapter;
 - standalone localhost-оболочку и Embed API.
 
-В Kernel Open Node работает только как человекочитаемая визуальная карта. Топологическая схема не является runtime-конфигурацией и не управляет сервисами автоматически.
+Текущая Topology Map в Kernel использует Excalidraw как человекочитаемое полотно. Топологическая схема не является runtime-конфигурацией и не управляет сервисами автоматически.
 
 ---
 
@@ -512,12 +512,18 @@ Service requests its scoped snapshot
         ↓
 Service validates revision, checksum and schema
         ↓
-Service stores last-known-good locally
+Service stores the verified reference snapshot locally
         ↓
-Service atomically applies the new configuration
+Service asks Kernel to resolve its keys through Volt
+        ↓
+Service keeps resolved values in memory and applies them atomically
 ```
 
-Если Kernel временно недоступен, уже настроенный сервис использует last-known-good и сообщает о degraded-состоянии. Первый запуск без валидного snapshot должен завершаться безопасным отказом.
+Register не хранит литеральные значения: каждое значение имеет вид
+`volt://<entry-id>/<field-id>`. Уже работающий сервис может пережить временную
+недоступность Kernel на значениях в памяти и сообщает о degraded-состоянии.
+Новый процесс не может разрешить reference snapshot без доступных Kernel и Volt
+и должен завершить запуск безопасным отказом.
 
 ---
 
@@ -552,7 +558,8 @@ Result, audit and rollback metadata are recorded
 Exocortex должен избегать каскадных отказов.
 
 - Kernel не участвует в каждом runtime-действии.
-- Сервисы сохраняют проверенный last-known-good config.
+- Сервисы сохраняют проверенный last-known-good reference snapshot и держат
+  разрешённые значения только в памяти.
 - Derived storage можно пересоздать.
 - Источники истины резервируются отдельно.
 - Изменения применяются атомарно.
@@ -600,7 +607,7 @@ Exocortex должен избегать каскадных отказов.
 | Perimetr | активная разработка |
 | Loki | существуют отдельные клиентские и сетевые компоненты |
 | Pods | концепция и требования сформированы, реализация развивается отдельно |
-| Open Node | отдельный framework и основа Topology Map |
+| Open Node | отдельный framework; текущая Topology Map временно использует Excalidraw |
 | Storage | архитектура формируется поэтапно |
 | Cognitive Plane | запланирован, не является обязательным для текущей работы системы |
 | Context Broker / Tool Gateway | запланированы вместе с AI-инструментарием |
@@ -616,7 +623,7 @@ Storage хранит данные и канонические версии.
 Loki обеспечивает клиентские и сетевые механизмы.
 Agents выполняют санкционированные команды.
 Pods предоставляют изолированный доступ к Subject.
-Open Node визуализирует и, в других применениях, исполняет нодовые процессы.
+Excalidraw визуализирует текущую Topology Map; Open Node остаётся отдельным framework для нодовых процессов.
 Cognitive Plane рассуждает и предлагает действия, но не владеет системой.
 Human остаётся финальным владельцем и арбитром.
 ```

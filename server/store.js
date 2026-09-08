@@ -74,12 +74,17 @@ export class KernelStore {
     this.db = new DatabaseSync(this.dbPath);
     this.db.exec("PRAGMA journal_mode = WAL");
     this.db.exec("PRAGMA foreign_keys = ON");
+    this.db.exec("PRAGMA secure_delete = ON");
     this.db.exec("PRAGMA busy_timeout = 5000");
     this.#createSchema();
     this.#ensureColumn("register_revisions", "source_revision", "TEXT");
     this.#ensureColumn("topology_revisions", "source_revision", "TEXT");
     this.#normalizeRegisterSnapshots();
     this.#seed(initialPasswordHash);
+    this.#ensureLaboratoryRegisterEntries();
+    this.#ensureVoltRegisterEntries();
+    this.#retireVoltResolvePath();
+    this.#ensureServiceMonitoringRegisterEntries();
     this.#trimAudit();
   }
 
@@ -177,8 +182,19 @@ export class KernelStore {
     putSetting.run("theme_dark", "#000000");
     putSetting.run("theme_light", "#ffffff");
     putSetting.run("theme_accent", "#00a8ff");
-    putSetting.run("sidebar_auto_hide", "true");
+    putSetting.run("sidebar_auto_hide", "false");
     putSetting.run("revision_request_logging", "true");
+    putSetting.run("navigation_order", JSON.stringify([
+      "dashboard", "overview", "topology", "register", "constitution", "settings",
+    ]));
+    putSetting.run("dashboard_order", JSON.stringify([
+      "cpu", "ram", "disk", "uptime",
+      "service-kernel", "service-chronos", "service-perimetr",
+      "service-saturn", "service-laboratory", "service-volt",
+    ]));
+    putSetting.run("settings_order", JSON.stringify([
+      "appearance", "security", "backup", "updates", "logs", "documents",
+    ]));
 
     for (const type of ["overview", "constitution"]) {
       const existing = this.db.prepare(
@@ -198,7 +214,7 @@ export class KernelStore {
     ).get();
     if (!topology) {
       const project = JSON.parse(fs.readFileSync(
-        path.join(this.defaultsDir, "topology.onode.json"),
+        path.join(this.defaultsDir, "topology.excalidraw.json"),
         "utf8",
       ));
       this.saveTopology(project, "system", "initial");
@@ -233,6 +249,116 @@ export class KernelStore {
     if (!setting.get("admin_password_hash")) {
       throw new Error("Kernel password initialization failed");
     }
+  }
+
+  #ensureLaboratoryRegisterEntries() {
+    const migrationKey = "migration.register.laboratory-content.v2";
+    if (this.db.prepare("SELECT value FROM settings WHERE key = ?").get(migrationKey)?.value === "complete") return;
+    const requiredKeys = new Set([
+      "repositories.laboratory.url",
+      "repositories.laboratory.content.url",
+      "repositories.laboratory.content.branch",
+      "services.laboratory.sni",
+      "services.laboratory.port",
+    ]);
+    const defaults = JSON.parse(fs.readFileSync(path.join(this.defaultsDir, "register.json"), "utf8"))
+      .filter((entry) => requiredKeys.has(entry.key));
+    this.transaction(() => {
+      const find = this.db.prepare("SELECT 1 FROM register_entries WHERE key = ?");
+      const insert = this.db.prepare(`
+        INSERT INTO register_entries(id, key, value, description, position, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `);
+      let position = this.db.prepare("SELECT COALESCE(MAX(position), -1) + 1 AS value FROM register_entries").get().value;
+      const timestamp = nowIso();
+      let changed = false;
+      for (const entry of defaults) {
+        if (find.get(entry.key)) continue;
+        insert.run(randomUUID(), entry.key, entry.value, entry.description ?? "", position, timestamp, timestamp);
+        position += 1;
+        changed = true;
+      }
+      if (changed) this.#createRegisterSnapshot("system", "migration");
+      this.db.prepare(`
+        INSERT INTO settings(key, value) VALUES (?, 'complete')
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+      `).run(migrationKey);
+    });
+  }
+
+  #ensureVoltRegisterEntries() {
+    const migrationKey = "migration.register.volt-endpoint.v1";
+    if (this.getSetting(migrationKey) === "complete") return;
+    const requiredKeys = new Set([
+      "repositories.volt.url",
+      "services.volt.sni",
+      "services.volt.port",
+    ]);
+    const defaults = JSON.parse(fs.readFileSync(path.join(this.defaultsDir, "register.json"), "utf8"))
+      .filter((entry) => requiredKeys.has(entry.key));
+    this.transaction(() => {
+      const find = this.db.prepare("SELECT 1 FROM register_entries WHERE key = ?");
+      const insert = this.db.prepare(`
+        INSERT INTO register_entries(id, key, value, description, position, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `);
+      let position = this.db.prepare("SELECT COALESCE(MAX(position), -1) + 1 AS value FROM register_entries").get().value;
+      const timestamp = nowIso();
+      let changed = false;
+      for (const entry of defaults) {
+        if (find.get(entry.key)) continue;
+        insert.run(randomUUID(), entry.key, entry.value, entry.description ?? "", position, timestamp, timestamp);
+        position += 1;
+        changed = true;
+      }
+      if (changed) this.#createRegisterSnapshot("system", "migration");
+      this.setSetting(migrationKey, "complete");
+    });
+  }
+
+  #retireVoltResolvePath() {
+    const migrationKey = "migration.register.kernel-secret-broker.v1";
+    if (this.getSetting(migrationKey) === "complete") return;
+    this.transaction(() => {
+      const removed = this.db.prepare("DELETE FROM register_entries WHERE key = ?")
+        .run("services.volt.paths.resolve");
+      if (Number(removed.changes) > 0) this.#createRegisterSnapshot("system", "migration");
+      this.setSetting(migrationKey, "complete");
+    });
+  }
+
+  #ensureServiceMonitoringRegisterEntries() {
+    const migrationKey = "migration.register.service-monitoring.v1";
+    if (this.getSetting(migrationKey) === "complete") return;
+    const requiredKeys = new Set([
+      "repositories.chronos.url",
+      "services.chronos.sni",
+      "services.chronos.port",
+      ...["kernel", "chronos", "perimetr", "saturn", "laboratory", "volt"].flatMap((service) => [
+        `services.${service}.health.path`,
+        `services.${service}.health.contract`,
+      ]),
+    ]);
+    const defaults = JSON.parse(fs.readFileSync(path.join(this.defaultsDir, "register.json"), "utf8"))
+      .filter((entry) => requiredKeys.has(entry.key));
+    this.transaction(() => {
+      const find = this.db.prepare("SELECT 1 FROM register_entries WHERE key = ?");
+      const insert = this.db.prepare(`
+        INSERT INTO register_entries(id, key, value, description, position, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `);
+      let position = this.db.prepare("SELECT COALESCE(MAX(position), -1) + 1 AS value FROM register_entries").get().value;
+      const timestamp = nowIso();
+      let changed = false;
+      for (const entry of defaults) {
+        if (find.get(entry.key)) continue;
+        insert.run(randomUUID(), entry.key, entry.value, entry.description ?? "", position, timestamp, timestamp);
+        position += 1;
+        changed = true;
+      }
+      if (changed) this.#createRegisterSnapshot("system", "migration");
+      this.setSetting(migrationKey, "complete");
+    });
   }
 
   transaction(callback) {
@@ -274,20 +400,47 @@ export class KernelStore {
     this.transaction(() => {
       this.setSetting("admin_password_hash", nextHash);
       this.setSetting("auth_generation", this.getAuthGeneration() + 1);
-      this.audit(actor, "security.password.change", "operator", "success", {});
+      this.audit(actor, "security.access-key.change", "operator", "success", {});
     });
     return this.getAuthGeneration();
   }
 
   getUiSettings() {
+    const readOrder = (key, fallback, appendMissing = false) => {
+      try {
+        const value = JSON.parse(this.getSetting(key) ?? "null");
+        if (
+          !Array.isArray(value)
+          || new Set(value).size !== value.length
+          || value.some((item) => !fallback.includes(item))
+        ) return fallback;
+        if (appendMissing) return [...value, ...fallback.filter((item) => !value.includes(item))];
+        return value.length === fallback.length ? value : fallback;
+      } catch {
+        return fallback;
+      }
+    };
     return {
       colors: {
-        dark: this.getSetting("theme_dark") ?? "#000000",
-        light: this.getSetting("theme_light") ?? "#ffffff",
+        dark: "#000000",
+        light: "#ffffff",
         accent: this.getSetting("theme_accent") ?? "#00a8ff",
       },
       sidebar_auto_hide: this.getSetting("sidebar_auto_hide") !== "false",
       revision_request_logging: this.getSetting("revision_request_logging") !== "false",
+      presentation: {
+        navigation_order: readOrder("navigation_order", [
+          "dashboard", "overview", "topology", "register", "constitution", "settings",
+        ]),
+        dashboard_order: readOrder("dashboard_order", [
+          "cpu", "ram", "disk", "uptime",
+          "service-kernel", "service-chronos", "service-perimetr",
+          "service-saturn", "service-laboratory", "service-volt",
+        ], true),
+        settings_order: readOrder("settings_order", [
+          "appearance", "security", "backup", "updates", "logs", "documents",
+        ]),
+      },
       audit_limits: {
         max_entries: this.auditMaxEntries,
         retention_days: this.auditRetentionDays,
@@ -299,30 +452,98 @@ export class KernelStore {
 
   updateUiSettings(settings, actor) {
     this.transaction(() => {
-      this.setSetting("theme_dark", settings.colors.dark);
-      this.setSetting("theme_light", settings.colors.light);
+      this.setSetting("theme_dark", "#000000");
+      this.setSetting("theme_light", "#ffffff");
       this.setSetting("theme_accent", settings.colors.accent);
       this.setSetting("sidebar_auto_hide", settings.sidebar_auto_hide ? "true" : "false");
       this.setSetting("revision_request_logging", settings.revision_request_logging ? "true" : "false");
+      this.setSetting("navigation_order", JSON.stringify(settings.presentation.navigation_order));
+      this.setSetting("dashboard_order", JSON.stringify(settings.presentation.dashboard_order));
+      this.setSetting("settings_order", JSON.stringify(settings.presentation.settings_order));
       this.audit(actor, "settings.update", "appearance", "success", settings);
     });
     return this.getUiSettings();
   }
 
-  ensureManagedRegisterEntry(key, value, description) {
-    const existing = this.db.prepare(
-      "SELECT id, value, description FROM register_entries WHERE key = ?",
-    ).get(key);
-    if (existing) {
-      return this.getRegisterSnapshot();
-    }
-    return this.upsertRegisterEntries([{ key, value, description }], "system");
+  getVoltConnectionSettings() {
+    return {
+      url: this.getSetting("volt_url") ?? "",
+      encrypted_token: this.getSetting("volt_kernel_token_encrypted") ?? "",
+    };
   }
 
-  getRegisterValue(key) {
-    return this.db.prepare(
-      "SELECT value FROM register_entries WHERE key = ?",
-    ).get(key)?.value ?? null;
+  updateVoltConnectionSettings({ url, encryptedToken }, actor = "operator") {
+    this.transaction(() => {
+      this.setSetting("volt_url", url);
+      if (encryptedToken) this.setSetting("volt_kernel_token_encrypted", encryptedToken);
+      this.audit(actor, "settings.volt.update", "volt-connection", "success", {
+        url,
+        token_changed: Boolean(encryptedToken),
+      });
+    });
+    return this.getVoltConnectionSettings();
+  }
+
+  scrubLegacyRegisterValues(isUnsafe, actor = "system") {
+    const migrationKey = "migration.register.volt-references.v3";
+    const unsafe = this.listRegisterEntries().filter((entry) => isUnsafe(entry.key, entry.value));
+    if (unsafe.length) {
+      if (this.getSetting(migrationKey) !== "pending") {
+        this.setSetting(migrationKey, "pending");
+        this.audit(actor, "register.value-migration", "register", "blocked", {
+          entry_count: unsafe.length,
+          keys: unsafe.map((entry) => entry.key),
+        });
+      }
+      return {
+        pending: true,
+        count: unsafe.length,
+        entries: unsafe.map(({ id, key }) => ({ id, key })),
+        snapshot: this.getRegisterSnapshot(),
+      };
+    }
+    if (this.getSetting(migrationKey) === "complete") {
+      return { pending: false, count: 0, entries: [], snapshot: this.getRegisterSnapshot() };
+    }
+
+    let scrubbedHistory = false;
+    const snapshot = this.transaction(() => {
+      const historyContainsValues = this.db.prepare(
+        "SELECT snapshot_json FROM register_revisions ORDER BY id",
+      ).all().some((row) => {
+        const stored = JSON.parse(row.snapshot_json);
+        const values = stored.values ?? {};
+        return Object.entries(values).some(([key, value]) => isUnsafe(key, String(value)));
+      });
+      let current = this.getRegisterSnapshot();
+      if (historyContainsValues) {
+        // Once every current value has been migrated, remove snapshots that
+        // can still disclose the legacy secret and start a clean history.
+        this.db.exec("DELETE FROM register_revisions");
+        current = this.#createRegisterSnapshot(actor, "value-scrub");
+        scrubbedHistory = true;
+      }
+      this.setSetting(migrationKey, "complete");
+      return current;
+    });
+    if (scrubbedHistory) this.db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+    return { pending: false, count: 0, entries: [], snapshot };
+  }
+
+  migrateLegacyVoltReferences(actor = "system") {
+    const legacy = this.db.prepare(
+      "SELECT id, value FROM register_entries WHERE value LIKE 'secret://volt/%'",
+    ).all();
+    if (!legacy.length) return false;
+    this.transaction(() => {
+      const update = this.db.prepare("UPDATE register_entries SET value = ?, updated_at = ? WHERE id = ?");
+      const timestamp = nowIso();
+      for (const entry of legacy) {
+        update.run(String(entry.value).replace(/^secret:\/\/volt\//i, "volt://"), timestamp, entry.id);
+      }
+      this.#createRegisterSnapshot(actor, "reference-migration");
+    });
+    return true;
   }
 
   createDocumentRevision(type, content, actor, reason = "upload", sourceRevision = null) {
@@ -550,7 +771,7 @@ export class KernelStore {
     `).all(limit);
   }
 
-  restoreRegister(revision, actor) {
+  restoreRegister(revision, actor, validator = null) {
     const source = this.db.prepare(`
       SELECT * FROM register_revisions WHERE revision = ?
     `).get(revision);
@@ -569,6 +790,9 @@ export class KernelStore {
         created_at: timestamp,
         updated_at: timestamp,
       }));
+    const restoredEntries = validator
+      ? entries.map((entry) => ({ ...entry, ...validator(entry) }))
+      : entries;
     return this.transaction(() => {
       this.db.exec("DELETE FROM register_entries");
       const insert = this.db.prepare(`
@@ -576,7 +800,7 @@ export class KernelStore {
           (id, key, value, description, position, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)
       `);
-      entries.forEach((entry, position) => insert.run(
+      restoredEntries.forEach((entry, position) => insert.run(
         entry.id || randomUUID(),
         entry.key,
         entry.value,
@@ -612,8 +836,11 @@ export class KernelStore {
     this.audit(actor, "topology.save", "topology", "success", {
       revision,
       checksum,
-      nodes: project.nodes.length,
-      connections: project.connections.length,
+      format: project.type ?? project.format ?? "unknown",
+      elements: project.elements?.length ?? project.nodes?.length ?? 0,
+      connections: project.elements?.filter((element) => element.type === "arrow" || element.type === "line").length
+        ?? project.connections?.length
+        ?? 0,
     });
     return this.getTopology();
   }
@@ -653,8 +880,11 @@ export class KernelStore {
         revision: restoredRevision,
         checksum,
         source_revision: revision,
-        nodes: project.nodes.length,
-        connections: project.connections.length,
+        format: project.type ?? project.format ?? "unknown",
+        elements: project.elements?.length ?? project.nodes?.length ?? 0,
+        connections: project.elements?.filter((element) => element.type === "arrow" || element.type === "line").length
+          ?? project.connections?.length
+          ?? 0,
       });
       return this.getTopology();
     });
@@ -746,6 +976,52 @@ export class KernelStore {
     }));
   }
 
+  listAuditAfter(eventId, limit = 100) {
+    const cursor = this.db.prepare(
+      "SELECT id FROM audit_events WHERE event_id = ?",
+    ).get(eventId)?.id;
+    if (!cursor) return [];
+    return this.db.prepare(`
+      SELECT event_id, actor, action, target, status, details_json, created_at
+      FROM audit_events WHERE id > ? ORDER BY id ASC LIMIT ?
+    `).all(cursor, limit).map((row) => ({
+      id: row.event_id,
+      actor: row.actor,
+      action: row.action,
+      target: row.target,
+      status: row.status,
+      details: JSON.parse(row.details_json),
+      created_at: row.created_at,
+    }));
+  }
+
+  listAuditBefore(eventId, limit = 100) {
+    const cursor = this.db.prepare(
+      "SELECT id FROM audit_events WHERE event_id = ?",
+    ).get(eventId)?.id;
+    if (!cursor) return [];
+    return this.db.prepare(`
+      SELECT event_id, actor, action, target, status, details_json, created_at
+      FROM audit_events WHERE id < ? ORDER BY id DESC LIMIT ?
+    `).all(cursor, limit).map((row) => ({
+      id: row.event_id,
+      actor: row.actor,
+      action: row.action,
+      target: row.target,
+      status: row.status,
+      details: JSON.parse(row.details_json),
+      created_at: row.created_at,
+    }));
+  }
+
+  setLastUpdateJobId(jobId) {
+    this.setSetting("last_update_job_id", jobId);
+  }
+
+  getLastUpdateJobId() {
+    return this.getSetting("last_update_job_id");
+  }
+
   exportAudit() {
     return {
       limits: {
@@ -787,7 +1063,7 @@ export class KernelStore {
     };
   }
 
-  importBackup(backup, actor) {
+  importBackup(backup, actor, registerValidator = null) {
     if (
       !backup
       || backup.format !== "exocortex-kernel-backup"
@@ -838,11 +1114,14 @@ export class KernelStore {
             { status: 400 },
           );
         }
+        const validated = registerValidator
+          ? registerValidator({ key: entry.key, value: entry.value, description: entry.description })
+          : { key: entry.key, value: entry.value, description: String(entry.description ?? "") };
         insert.run(
           randomUUID(),
-          entry.key,
-          entry.value,
-          String(entry.description ?? ""),
+          validated.key,
+          validated.value,
+          validated.description,
           position,
           timestamp,
           timestamp,

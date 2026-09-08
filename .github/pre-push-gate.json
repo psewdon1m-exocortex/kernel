@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "service": "kernel",
+  "exposure_modes": [
+    "public/non-indexable",
+    "private"
+  ],
+  "profiles": {
+    "backup_restore": {
+      "applicable": true,
+      "evidence": [
+        "README.md",
+        "server/app.js",
+        "tests/api.test.js"
+      ]
+    },
+    "service_update": {
+      "applicable": true,
+      "evidence": [
+        "README.md",
+        "WEB_SERVICE_UPDATE_ARCHITECTURE.md",
+        "server/updater.js",
+        "tests/api.test.js"
+      ]
+    },
+    "internal_documentation": {
+      "applicable": true,
+      "evidence": [
+        "src/DocumentationPage.tsx",
+        "src/App.tsx",
+        "tests/e2e/kernel.spec.ts"
+      ]
+    },
+    "technical_documentation": {
+      "applicable": true,
+      "evidence": [
+        "README.md",
+        "RELEASING.md",
+        "WEB_SERVICE_UPDATE_ARCHITECTURE.md"
+      ]
+    },
+    "security": {
+      "applicable": true,
+      "evidence": [
+        "server/security.js",
+        "tests/security.test.js"
+      ]
+    },
+    "public_seo_geo": {
+      "applicable": false,
+      "reason": "Kernel has no intentionally public/indexable content surface."
+    },
+    "private_concealed": {
+      "applicable": true,
+      "evidence": [
+        "README.md",
+        "server/security.js",
+        "tests/security.test.js"
+      ]
+    }
+  }
+}

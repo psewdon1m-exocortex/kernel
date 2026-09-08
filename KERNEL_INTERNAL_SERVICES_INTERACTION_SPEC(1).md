@@ -3,7 +3,7 @@
 **Document status:** Target specification and verification checklist  
 **System:** Exocortex  
 **Component:** Kernel  
-**Version:** 1.1  
+**Version:** 1.2
 **Purpose:** verify the current implementation of Kernel interaction with internal services and define the required changes where the implementation does not match the target model.
 
 ---
@@ -40,8 +40,35 @@ document:
 - Sindri never contacts Kernel and manages only its own release lifecycle.
 - Agent and Sindri repository coordinates used for self-update are stored in
   their own checksummed release manifests.
-- `KERNEL_SERVICE_TOKEN` is the local bootstrap trust anchor. Kernel also
-  publishes `services.kernel.service_token` for trusted internal services.
+- `KERNEL_SERVICE_TOKEN` is a runtime bootstrap trust anchor and is never
+  published through Register.
+
+### 1.2 Volt value authority (normative amendment)
+
+This amendment supersedes every older example in this document that shows a
+literal value, plaintext secret, `secret://env/...`, a shared token in Register,
+or a service contacting Volt directly:
+
+- Every Kernel Register value is exactly `volt://<entry-id>/<field-id>`; literal
+  values are not publishable.
+- Snapshot endpoints return that opaque reference unchanged. An authenticated
+  service asks Kernel to resolve one or more Register keys through
+  `POST /api/v1/register/resolve`.
+- Kernel resolves strict Volt references from the current published snapshot and
+  contacts Volt with one shared Kernel-to-Volt token. Services never receive
+  this token and never contact Volt directly.
+- Volt trusts Kernel as its only machine principal. There are no per-service or
+  per-entry grants in the current model.
+- Register last-known-good caches contain only references. Resolved plaintext
+  remains in process memory and is not written to the Register cache.
+- When legacy current entries still contain literals or old references, Kernel
+  preserves them for an authenticated operator but returns
+  `REGISTER_VALUE_MIGRATION_REQUIRED` from the machine API. After every such
+  entry is replaced with a Volt reference, the value-bearing Register history
+  is scrubbed and normal publication resumes.
+- A cached snapshot contains only references. A fresh process cannot resolve it
+  while Kernel or Volt is unavailable; an already running process may continue
+  with resolved values retained only in memory.
 
 ---
 
@@ -314,6 +341,7 @@ Kernel does not divide Register read rights by service in v1.
 A valid machine token grants:
 
 - full read-only access to the published Register;
+- resolution of any Volt reference in the current published Register;
 - full read-only access to Constitution API;
 - access to Kernel health endpoint if authentication is required by deployment policy.
 
@@ -333,9 +361,11 @@ A shared token and unrestricted Register read access are deliberate simplificati
 Consequences:
 
 - any internal service with the token can read the complete Register;
-- any internal service with the token can read Register secrets;
+- any internal service with the token can ask Kernel to resolve every secret in
+  the current published Register;
 - Kernel cannot reliably attribute a read request to a specific service;
-- compromise of one token compromises the machine-readable Register.
+- compromise of one service compromises the machine-readable Register and all
+  secrets referenced by it.
 
 This limitation must be documented and kept isolated so that per-service identities and scopes can be added later without changing the Register payload model.
 
@@ -515,13 +545,47 @@ Example response:
   "schema": "exocortex.register.value.v1",
   "revision": "register-000042",
   "key": "services.perimetr.sni",
-  "value": "perimetr.example.com"
+  "value": "volt://<entry-id>/<field-id>"
 }
 ```
 
-The endpoint may return secrets because v1 has no read separation.
+This endpoint always returns the opaque Volt reference and never resolves it.
 
-### 9.5 Revision check
+### 9.5 Resolve current values
+
+```http
+POST /api/v1/register/resolve
+Authorization: Bearer <KERNEL_SERVICE_TOKEN>
+Content-Type: application/json
+
+{"keys":["services.perimetr.sni","services.chronos.telegram_api"]}
+```
+
+Kernel resolves every requested key through its authenticated Volt connection:
+
+```json
+{
+  "schema": "exocortex.register.resolution.v1",
+  "register_revision": "register-000042",
+  "values": {
+    "services.perimetr.sni": {
+      "value": "perimetr.example.com",
+      "secret": false,
+      "volt_revision": 3
+    },
+    "services.chronos.telegram_api": {
+      "value": "resolved plaintext",
+      "secret": true,
+      "volt_revision": 3
+    }
+  }
+}
+```
+
+The request accepts 1–20 valid dotted keys, is all-or-nothing, and never writes
+resolved values to Register, caches, backups or audit records.
+
+### 9.6 Revision check
 
 ```http
 HEAD /api/v1/register/snapshot
@@ -536,7 +600,7 @@ X-Register-Revision: register-000042
 X-Register-Checksum: sha256:92d0...
 ```
 
-### 9.6 Conditional request
+### 9.7 Conditional request
 
 ```http
 GET /api/v1/register/snapshot
@@ -557,9 +621,9 @@ If changed:
 ETag: "register-000043"
 ```
 
-### 9.7 Cache headers
+### 9.8 Cache headers
 
-Because Register may contain secrets, responses must use:
+Because resolution responses contain secrets, all machine responses must use:
 
 ```http
 Cache-Control: no-store, private
@@ -568,7 +632,8 @@ Pragma: no-cache
 
 Shared HTTP proxies must not cache Register responses.
 
-Services may create their own encrypted local last-known-good cache after validation.
+Services may cache the verified reference snapshot. Resolved values must remain
+in process memory and must not be written to that cache.
 
 ---
 
@@ -1033,7 +1098,7 @@ Because Register contains secrets:
 - Register cache must be encrypted at rest;
 - cache files must be readable only by the service account;
 - temporary files must be protected;
-- old secret-bearing cache files must be removed securely where supported;
+- old cache files containing resolved or literal values must be removed securely where supported;
 - cache contents must never be printed to logs;
 - crash dumps must not include Register values.
 
@@ -1154,6 +1219,7 @@ GET  /api/v1/register/snapshot
 HEAD /api/v1/register/snapshot
 GET  /api/v1/register/sections/{section}
 GET  /api/v1/register/resolve?key={key}
+POST /api/v1/register/resolve
 
 GET  /api/v1/constitution/raw
 GET  /api/v1/constitution/snapshot
@@ -1170,7 +1236,8 @@ Dashboard metrics API for internal service logic
 
 ### 23.3 Machine client restrictions
 
-Machine token endpoints are read-only.
+Machine token endpoints do not mutate Kernel state. The resolution POST is a
+read operation and exists only to keep credentials out of URL query strings.
 
 Mutation endpoints must be under a separate protected administration namespace.
 

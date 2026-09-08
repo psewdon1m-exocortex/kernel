@@ -1,20 +1,23 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { randomUUID } from "node:crypto";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import cookieParser from "cookie-parser";
 import express from "express";
 import { strToU8, unzipSync, zipSync } from "fflate";
 import multer from "multer";
 import {
   createSessionToken,
+  decryptStoredSecret,
+  encryptStoredSecret,
   hashPassword,
+  validateVoltKernelToken,
   verifyApiToken,
   verifyPassword,
   verifySessionToken,
 } from "./security.js";
 import { createMetricsCollector } from "./metrics.js";
+import { createServiceStatusCollector, SERVICE_STATUS_DEFINITIONS } from "./service-status.js";
 import { KernelStore } from "./store.js";
 import {
   CONSTITUTION_MEDIA_TYPE,
@@ -25,24 +28,31 @@ import {
 } from "./machine-contract.js";
 import { checkGitHubRelease } from "./updater.js";
 import { createUpdaterClient } from "./updater-client.js";
+import { createNeptuneClient } from "./neptune-client.js";
+import { createVoltClient, validateVoltUrl } from "./volt-client.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DOCUMENT_TYPES = new Set(["overview", "constitution"]);
 const MAX_MARKDOWN_BYTES = 1024 * 1024;
-const MAX_TOPOLOGY_BYTES = 8 * 1024 * 1024;
-const MAX_BROWSER_DOCUMENT_BYTES = 4 * 1024 * 1024;
+const MAX_TOPOLOGY_BYTES = 32 * 1024 * 1024;
 const MAX_BACKUP_BYTES = 32 * 1024 * 1024;
 const MAX_BACKUP_MANIFEST_BYTES = 64 * 1024;
 const MAX_BACKUP_COMPRESSION_RATIO = 200;
+const MAX_VOLT_REFERENCES = 20;
 const KERNEL_BACKUP_ARCHIVE_FORMAT = "exocortex-kernel-backup-archive";
 const KERNEL_BACKUP_DATA_MEMBER = "data/kernel.json";
 const SAFE_KEY = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-const SENSITIVE_KEY = /(?:^|[._-])(password|passwd|secret|token|private[._-]?key|cookie|session|recovery|seed)(?:$|[._-])/i;
-const SENSITIVE_VALUE = /(-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:^|\s)(?:sk|ghp|github_pat)_[A-Za-z0-9_-]{12,}|https?:\/\/[^/\s:@]+:[^/\s@]+@|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,})/;
+const VOLT_REFERENCE = /^volt:\/\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ALLOWED_COLOR = /^#[0-9a-f]{6}$/i;
-const MANAGED_SERVICE_TOKEN_KEY = "services.kernel.service_token";
-const BROWSER_DOCUMENT_NODE_TYPE = "exocortex.architecture.document";
-const BROWSER_DOCUMENT_KINDS = new Set(["pdf", "markdown", "docx", "graph"]);
+const PRESENTATION_ORDERS = {
+  navigation_order: ["dashboard", "overview", "topology", "register", "constitution", "settings"],
+  dashboard_order: [
+    "cpu", "ram", "disk", "uptime",
+    "service-kernel", "service-chronos", "service-perimetr",
+    "service-saturn", "service-laboratory", "service-volt",
+  ],
+  settings_order: ["appearance", "security", "backup", "updates", "logs", "documents"],
+};
 const ROBOTS_POLICY = fs.readFileSync(path.join(ROOT, "server", "robots.txt"), "utf8");
 const PROXY_IDENTITY_HEADERS = [
   "forwarded",
@@ -117,156 +127,125 @@ function validateRegisterInput(body) {
   if (!value || value.length > 2048) {
     throw Object.assign(new Error("Value must contain between 1 and 2048 characters"), { status: 400 });
   }
-  if (key === MANAGED_SERVICE_TOKEN_KEY && value.length < 24) {
-    throw Object.assign(new Error("Kernel service token must contain at least 24 characters"), { status: 400 });
-  }
   if (description.length > 500) {
     throw Object.assign(new Error("Description is too long"), { status: 400 });
   }
-  const isReference = value.startsWith("secret://");
-  if ((SENSITIVE_KEY.test(key) && !isReference && key !== MANAGED_SERVICE_TOKEN_KEY) || SENSITIVE_VALUE.test(value)) {
-    throw Object.assign(new Error("Register cannot store secrets; use a secret:// reference"), { status: 400 });
+  if (!VOLT_REFERENCE.test(value)) {
+    throw Object.assign(new Error("Register values must use volt://<entry-id>/<field-id>"), { status: 400 });
   }
   return { key, value, description };
 }
 
-function validateAppearance(body) {
-  const colors = body?.colors ?? {};
-  for (const name of ["dark", "light", "accent"]) {
-    if (!ALLOWED_COLOR.test(colors[name] ?? "")) {
-      throw Object.assign(new Error(`Invalid ${name} color`), { status: 400 });
+function isUnresolvedRegisterEntry(_key, value) {
+  return !VOLT_REFERENCE.test(String(value));
+}
+
+function nestedRegisterValue(values, key) {
+  let value = values;
+  for (const part of key.split(".")) {
+    if (!value || typeof value !== "object" || !Object.hasOwn(value, part)) return undefined;
+    value = value[part];
+  }
+  return value;
+}
+
+function validateUiSettings(body, current) {
+  const accent = body?.colors?.accent ?? current.colors.accent;
+  if (!ALLOWED_COLOR.test(accent)) {
+    throw Object.assign(new Error("Invalid accent color"), { status: 400 });
+  }
+  const presentation = {};
+  for (const [name, required] of Object.entries(PRESENTATION_ORDERS)) {
+    const proposed = body?.presentation?.[name] ?? current.presentation[name];
+    if (
+      !Array.isArray(proposed)
+      || proposed.length !== required.length
+      || new Set(proposed).size !== required.length
+      || proposed.some((item) => !required.includes(item))
+    ) {
+      throw Object.assign(new Error(`Invalid ${name.replaceAll("_", " ")}`), { status: 400 });
+    }
+    presentation[name] = proposed;
+  }
+  for (const field of ["sidebar_auto_hide", "revision_request_logging"]) {
+    if (body?.[field] !== undefined && typeof body[field] !== "boolean") {
+      throw Object.assign(new Error(`Invalid ${field.replaceAll("_", " ")}`), { status: 400 });
     }
   }
   return {
     colors: {
-      dark: colors.dark.toLowerCase(),
-      light: colors.light.toLowerCase(),
-      accent: colors.accent.toLowerCase(),
+      dark: "#000000",
+      light: "#ffffff",
+      accent: accent.toLowerCase(),
     },
-    sidebar_auto_hide: body.sidebar_auto_hide !== false,
-    revision_request_logging: body.revision_request_logging !== false,
+    sidebar_auto_hide: body?.sidebar_auto_hide ?? current.sidebar_auto_hide,
+    revision_request_logging: body?.revision_request_logging ?? current.revision_request_logging,
+    presentation,
   };
 }
 
 function validateTopology(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw Object.assign(new Error("Topology must be an Open Node project object"), { status: 400 });
+    throw Object.assign(new Error("Topology must be an Excalidraw document object"), { status: 400 });
   }
   const serialized = JSON.stringify(value);
   if (Buffer.byteLength(serialized, "utf8") > MAX_TOPOLOGY_BYTES) {
-    throw Object.assign(new Error("Topology project exceeds the 8 MB limit"), { status: 413 });
+    throw Object.assign(new Error("Topology document exceeds the 32 MB limit"), { status: 413 });
   }
-  if (value.format !== "open-node-project" || value.schemaVersion !== "1.0.0") {
-    throw Object.assign(new Error("Unsupported Open Node project format"), { status: 400 });
+  if (value.type !== "excalidraw" || Number(value.version) !== 2) {
+    throw Object.assign(new Error("Unsupported Excalidraw document format"), { status: 400 });
   }
-  for (const field of ["nodes", "containers", "groups", "connections", "annotations", "presets", "assets"]) {
-    if (!Array.isArray(value[field])) {
-      throw Object.assign(new Error(`Topology field ${field} must be an array`), { status: 400 });
-    }
+  if (!Array.isArray(value.elements)) {
+    throw Object.assign(new Error("Topology field elements must be an array"), { status: 400 });
   }
-  for (const asset of value.assets) {
+  if (!value.appState || typeof value.appState !== "object" || Array.isArray(value.appState)) {
+    throw Object.assign(new Error("Topology field appState must be an object"), { status: 400 });
+  }
+  const files = value.files ?? {};
+  if (!files || typeof files !== "object" || Array.isArray(files)) {
+    throw Object.assign(new Error("Topology field files must be an object"), { status: 400 });
+  }
+  const elementIds = new Set();
+  for (const element of value.elements) {
     if (
-      asset?.storage === "remote"
-      || (typeof asset?.uri === "string" && /^https?:\/\//i.test(asset.uri))
+      !element
+      || typeof element !== "object"
+      || typeof element.id !== "string"
+      || !element.id
+      || typeof element.type !== "string"
+      || !element.type
     ) {
-      throw Object.assign(new Error("Remote Topology assets are disabled"), { status: 400 });
+      throw Object.assign(new Error("Topology contains an invalid Excalidraw element"), { status: 400 });
     }
-    validateBrowserDocumentAsset(asset);
+    if (elementIds.has(element.id)) {
+      throw Object.assign(new Error("Topology contains duplicate Excalidraw element IDs"), { status: 400 });
+    }
+    elementIds.add(element.id);
   }
-  const assetsById = new Map(value.assets.map((asset) => [asset?.id, asset]));
-  for (const node of value.nodes) {
-    if (node?.nodeTypeId !== BROWSER_DOCUMENT_NODE_TYPE) continue;
-    const assetId = typeof node.parameters?.assetId === "string" ? node.parameters.assetId : "";
-    if (!assetId) continue;
-    const asset = assetsById.get(assetId);
-    if (!asset?.metadata?.browserDocument) {
-      throw Object.assign(new Error("Document Node references a missing or non-embedded file"), { status: 400 });
+  for (const [fileId, file] of Object.entries(files)) {
+    if (
+      !file
+      || typeof file !== "object"
+      || file.id !== fileId
+      || typeof file.dataURL !== "string"
+      || !/^data:image\/(?:png|jpeg|webp|gif|svg\+xml);base64,/i.test(file.dataURL)
+    ) {
+      throw Object.assign(new Error("Topology files must be embedded Excalidraw image data"), { status: 400 });
     }
   }
-  const project = structuredClone(value);
-  project.execution = {
-    ...project.execution,
-    mode: "manual",
-    concurrency: 1,
-    preferredBackend: "main",
-    cacheEnabled: false,
+  return {
+    type: "excalidraw",
+    version: 2,
+    source: typeof value.source === "string" ? value.source.slice(0, 2048) : "https://excalidraw.com",
+    elements: structuredClone(value.elements),
+    appState: structuredClone(value.appState),
+    files: structuredClone(files),
   };
-  project.timeline = { ...project.timeline, enabled: false };
-  project.settings = {
-    ...project.settings,
-    timelineVisible: false,
-    dashboardVisible: false,
-  };
-  project.metadata = {
-    ...project.metadata,
-    updatedAt: new Date().toISOString(),
-  };
-  return project;
-}
-
-function validateBrowserDocumentAsset(asset) {
-  const payload = asset?.metadata?.browserDocument;
-  if (payload == null) return;
-  if (!payload || typeof payload !== "object" || !BROWSER_DOCUMENT_KINDS.has(payload.kind) || typeof payload.dataBase64 !== "string") {
-    throw Object.assign(new Error("Invalid embedded document metadata"), { status: 400 });
-  }
-  if (asset.storage !== "embedded") {
-    throw Object.assign(new Error("Attached documents must use embedded storage"), { status: 400 });
-  }
-  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(payload.dataBase64)) {
-    throw Object.assign(new Error("Attached document payload is not canonical base64"), { status: 400 });
-  }
-  const bytes = Buffer.from(payload.dataBase64, "base64");
-  if (bytes.length === 0 || bytes.length > MAX_BROWSER_DOCUMENT_BYTES) {
-    throw Object.assign(new Error("Attached document must contain between 1 byte and 4 MB"), { status: 413 });
-  }
-  if (asset.size !== bytes.length) {
-    throw Object.assign(new Error("Attached document size metadata does not match its payload"), { status: 400 });
-  }
-  const checksum = createHash("sha256").update(bytes).digest("hex");
-  if (!/^[a-f0-9]{64}$/.test(asset.checksum ?? "") || asset.checksum !== checksum) {
-    throw Object.assign(new Error("Attached document checksum does not match its payload"), { status: 400 });
-  }
-  const expectedMime = {
-    pdf: "application/pdf",
-    markdown: "text/plain;charset=utf-8",
-    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    graph: "application/vnd.open-node.project+json",
-  }[payload.kind];
-  if (asset.mimeType !== expectedMime) {
-    throw Object.assign(new Error("Attached document MIME type does not match its declared format"), { status: 400 });
-  }
-  const name = typeof asset.name === "string" ? asset.name.toLowerCase() : "";
-  if (payload.kind === "pdf") {
-    if (!name.endsWith(".pdf") || bytes.subarray(0, 5).toString("ascii") !== "%PDF-") rejectDocumentType("PDF");
-  } else if (payload.kind === "markdown") {
-    if (!name.endsWith(".md") || bytes.includes(0)) rejectDocumentType("Markdown");
-    try {
-      new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-    } catch {
-      rejectDocumentType("Markdown");
-    }
-  } else if (payload.kind === "docx") {
-    if (!name.endsWith(".docx") || !isZipBuffer(bytes) || !bytes.includes(Buffer.from("[Content_Types].xml")) || !bytes.includes(Buffer.from("word/document.xml"))) rejectDocumentType("DOCX");
-  } else if (payload.kind === "graph") {
-    if (!(name.endsWith(".onode") || name.endsWith(".onode.json"))) rejectDocumentType("graph project");
-    try {
-      const graph = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
-      if (graph?.format !== "open-node-project" || graph?.schemaVersion !== "1.0.0") rejectDocumentType("graph project");
-    } catch (error) {
-      if (error?.status) throw error;
-      rejectDocumentType("graph project");
-    }
-  }
 }
 
 function isZipBuffer(bytes) {
   return bytes[0] === 0x50 && bytes[1] === 0x4b
     && ((bytes[2] === 0x03 && bytes[3] === 0x04) || (bytes[2] === 0x05 && bytes[3] === 0x06));
-}
-
-function rejectDocumentType(label) {
-  throw Object.assign(new Error(`Attached file does not match the declared ${label} format`), { status: 400 });
 }
 
 function parseUtf8Json(bytes, label) {
@@ -387,14 +366,33 @@ function validateMarkdown(file, type) {
   return `${content}\n`;
 }
 
-function requestOriginMatches(req) {
+function firstForwardedHeaderValue(value) {
+  return typeof value === "string"
+    ? value.split(",").at(-1)?.trim()
+    : undefined;
+}
+
+function isLoopbackAddress(address) {
+  const normalized = String(address ?? "").replace(/^::ffff:/, "");
+  return normalized === "::1" || normalized === "127.0.0.1";
+}
+
+function requestOriginMatches(req, trustProxy) {
   const origin = req.get("origin");
   if (!origin) return true;
   try {
     const source = new URL(origin);
-    const forwardedHost = req.get("x-forwarded-host");
-    const expectedHost = forwardedHost || req.get("host");
-    return source.host === expectedHost;
+    if (!["http:", "https:"].includes(source.protocol)) return false;
+
+    const expectedHosts = new Set([req.get("host")].filter(Boolean));
+    // Local development and the supported production proxy both terminate the
+    // browser connection before forwarding it to Kernel. Trust the public host
+    // only from that trusted hop, never from an arbitrary remote client.
+    if (trustProxy || isLoopbackAddress(req.socket.remoteAddress)) {
+      const forwardedHost = firstForwardedHeaderValue(req.get("x-forwarded-host"));
+      if (forwardedHost) expectedHosts.add(forwardedHost);
+    }
+    return expectedHosts.has(source.host);
   } catch {
     return false;
   }
@@ -409,8 +407,8 @@ export function createKernelApp(options) {
     dataDir = path.join(ROOT, "data"),
     defaultsDir = path.join(ROOT, "data", "defaults"),
     distDir = path.join(ROOT, "dist"),
-    adminUsername,
-    adminPassword,
+    accessKey = options.adminPassword,
+    legacyAdminUsername = options.adminUsername,
     sessionSecret,
     apiToken,
     cookieSecure = false,
@@ -422,26 +420,99 @@ export function createKernelApp(options) {
     auditMaxBytes = 64 * 1024 * 1024,
     updateCheckTimeoutMs = 5000,
     releaseFetch = globalThis.fetch,
+    serviceStatusFetch = globalThis.fetch,
+    serviceStatusIntervalMs = 30_000,
+    serviceStatusTimeoutMs = 3_000,
     updaterSocketPath = "/run/exocortex/updater.sock",
     updaterHeadId = "kernel",
     updaterControlToken = "",
     updaterClient = createUpdaterClient(updaterSocketPath, updaterControlToken),
+    neptuneSocketPath = "/run/neptune/neptuned.sock",
+    neptuneProjectId = "kernel",
+    neptuneControlTokenFile = "",
+    neptuneExportTokenFile = "",
+    neptuneClient = createNeptuneClient(neptuneSocketPath, neptuneProjectId, neptuneControlTokenFile),
+    voltUrl = "",
+    voltKernelToken = "",
+    voltTimeoutMs = 3000,
+    voltFetch = globalThis.fetch,
+    voltClient = null,
   } = options;
 
   const store = new KernelStore({
     dataDir,
     defaultsDir,
-    initialPasswordHash: hashPassword(adminPassword),
+    initialPasswordHash: hashPassword(accessKey),
     auditMaxEntries,
     auditRetentionDays,
     auditMaxBytes,
   });
-  store.ensureManagedRegisterEntry(
-    MANAGED_SERVICE_TOKEN_KEY,
-    apiToken,
-    "Bearer token distributed to trusted internal services. The KERNEL_SERVICE_TOKEN bootstrap credential remains valid so a service can always read Register.",
-  );
+  const storedVoltConnection = store.getVoltConnectionSettings();
+  if ((!storedVoltConnection.url && voltUrl) || (!storedVoltConnection.encrypted_token && voltKernelToken)) {
+    const migratedToken = !storedVoltConnection.encrypted_token && voltKernelToken
+      ? encryptStoredSecret(voltKernelToken, sessionSecret)
+      : "";
+    store.updateVoltConnectionSettings({
+      url: storedVoltConnection.url || validateVoltUrl(voltUrl),
+      encryptedToken: migratedToken,
+    }, "system:migration");
+  }
+  function activeVoltClient() {
+    if (voltClient) return voltClient;
+    const connection = store.getVoltConnectionSettings();
+    return createVoltClient({
+      baseUrl: connection.url,
+      token: decryptStoredSecret(connection.encrypted_token, sessionSecret),
+      timeoutMs: voltTimeoutMs,
+      fetchImpl: voltFetch,
+    });
+  }
+  store.migrateLegacyVoltReferences();
+  store.scrubLegacyRegisterValues(isUnresolvedRegisterEntry);
+  async function resolveCurrentRegisterKeys(keys, { allowMissing = false } = {}) {
+    const snapshot = store.getRegisterMachineSnapshot();
+    if (!snapshot) throw Object.assign(new Error("Register is not initialized"), { status: 503 });
+    const selected = new Map();
+    for (const key of keys) {
+      const reference = nestedRegisterValue(snapshot.values, key);
+      if (reference === undefined && allowMissing) continue;
+      if (typeof reference !== "string" || !VOLT_REFERENCE.test(reference)) {
+        throw Object.assign(new Error(`Register key ${key} is not mapped to Volt`), { status: 409 });
+      }
+      selected.set(key, reference);
+    }
+    if (!selected.size) return {};
+    const references = [...new Set(selected.values())];
+    const resolvedValues = {};
+    for (let offset = 0; offset < references.length; offset += MAX_VOLT_REFERENCES) {
+      const resolved = await activeVoltClient().resolve(references.slice(offset, offset + MAX_VOLT_REFERENCES));
+      Object.assign(resolvedValues, resolved.values);
+    }
+    return Object.fromEntries([...selected].map(([key, reference]) => [key, resolvedValues[reference].value]));
+  }
   const metrics = createMetricsCollector(diskPath);
+  const serviceStatusKeys = SERVICE_STATUS_DEFINITIONS.flatMap(({ id }) => [
+    `services.${id}.sni`,
+    `services.${id}.port`,
+    `services.${id}.health.path`,
+    `services.${id}.health.contract`,
+  ]);
+  const serviceStatuses = createServiceStatusCollector({
+    fetchImpl: serviceStatusFetch,
+    getRegisterValues: async () => {
+      try { return await resolveCurrentRegisterKeys(serviceStatusKeys, { allowMissing: true }); }
+      catch { return {}; }
+    },
+    intervalMs: serviceStatusIntervalMs,
+    timeoutMs: serviceStatusTimeoutMs,
+    onTransition: (previous, current) => {
+      store.audit("system", "service.status.change", current.id, current.status, {
+        from: previous.status,
+        to: current.status,
+        checks: current.checks,
+      });
+    },
+  });
   const app = express();
   const upload = multer({
     storage: multer.memoryStorage(),
@@ -452,6 +523,28 @@ export function createKernelApp(options) {
     limits: { files: 1, fileSize: MAX_BACKUP_BYTES },
   });
   const loginAttempts = new Map();
+  const resolutionAttempts = new Map();
+
+  function recordResolutionAttempt(address, now) {
+    if (resolutionAttempts.size >= 2_048) {
+      for (const [source, timestamps] of resolutionAttempts) {
+        if (!timestamps.some((timestamp) => now - timestamp < 60_000)) resolutionAttempts.delete(source);
+      }
+      while (resolutionAttempts.size >= 2_048) resolutionAttempts.delete(resolutionAttempts.keys().next().value);
+    }
+    const recent = (resolutionAttempts.get(address) ?? []).filter((timestamp) => now - timestamp < 60_000);
+    if (recent.length >= 120) return false;
+    recent.push(now);
+    resolutionAttempts.set(address, recent);
+    return true;
+  }
+
+  function authorizeNeptuneExport(req) {
+    if (!neptuneExportTokenFile || !fs.existsSync(neptuneExportTokenFile)) return false;
+    const supplied = String(req.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
+    const expected = fs.readFileSync(neptuneExportTokenFile, "utf8").trim();
+    return timingSafeEqual(createHash("sha256").update(supplied).digest(), createHash("sha256").update(expected).digest());
+  }
 
   app.disable("x-powered-by");
   if (trustProxy) app.set("trust proxy", 1);
@@ -488,11 +581,7 @@ export function createKernelApp(options) {
     const authorization = req.get("authorization") ?? "";
     if (authorization.startsWith("Bearer ")) {
       const presentedToken = authorization.slice(7);
-      const registerToken = store.getRegisterValue(MANAGED_SERVICE_TOKEN_KEY);
-      if (
-        verifyApiToken(presentedToken, apiToken)
-        || verifyApiToken(presentedToken, registerToken)
-      ) {
+      if (verifyApiToken(presentedToken, apiToken)) {
         return { actor: "internal-service", kind: "service" };
       }
     }
@@ -513,7 +602,7 @@ export function createKernelApp(options) {
     if (req.auth?.kind !== "operator") {
       return res.status(403).json({ error: "Operator session required" });
     }
-    if (!requestOriginMatches(req)) {
+    if (!requestOriginMatches(req, trustProxy)) {
       return res.status(403).json({ error: "Request origin is not allowed" });
     }
     next();
@@ -564,6 +653,42 @@ export function createKernelApp(options) {
     });
   }
 
+  function registerMigration(actor = "system") {
+    const result = store.scrubLegacyRegisterValues(isUnresolvedRegisterEntry, actor);
+    return {
+      result,
+      status: {
+        required: result.pending,
+        entry_count: result.count,
+        entries: result.entries,
+      },
+    };
+  }
+
+  function operatorRegisterSnapshot(actor = "system") {
+    const migration = registerMigration(actor);
+    return { ...migration.result.snapshot, value_migration: migration.status };
+  }
+
+  function publishableRegisterSnapshot(req, res) {
+    const migration = registerMigration();
+    if (migration.status.required) {
+      machineAudit(req, "blocked", {
+        reason: "volt-value-migration",
+        entry_count: migration.status.entry_count,
+      });
+      machineError(
+        req,
+        res,
+        503,
+        "REGISTER_VALUE_MIGRATION_REQUIRED",
+        "Register publication is blocked until every value is replaced with a volt:// reference.",
+      );
+      return null;
+    }
+    return store.getRegisterMachineSnapshot();
+  }
+
   function sendMachineJson(res, mediaType, payload) {
     res.setHeader("Content-Type", mediaType);
     res.end(JSON.stringify(payload));
@@ -606,21 +731,24 @@ export function createKernelApp(options) {
   });
 
   app.head("/api/v1/register/snapshot", requireMachine, (req, res) => {
-    const snapshot = store.getRegisterMachineSnapshot();
+    const snapshot = publishableRegisterSnapshot(req, res);
+    if (!snapshot) return;
     if (applyConditionalHeaders(req, res, "Register", snapshot)) return;
     machineAudit(req, "success", { revision: snapshot.revision });
     res.status(200).end();
   });
 
   app.get("/api/v1/register/snapshot", requireMachine, (req, res) => {
-    const snapshot = store.getRegisterMachineSnapshot();
+    const snapshot = publishableRegisterSnapshot(req, res);
+    if (!snapshot) return;
     if (applyConditionalHeaders(req, res, "Register", snapshot)) return;
     machineAudit(req, "success", { revision: snapshot.revision });
     sendMachineJson(res, REGISTER_MEDIA_TYPE, snapshot);
   });
 
   app.get("/api/v1/register/sections/:section", requireMachine, (req, res) => {
-    const snapshot = store.getRegisterMachineSnapshot();
+    const snapshot = publishableRegisterSnapshot(req, res);
+    if (!snapshot) return;
     const section = req.params.section;
     if (!Object.hasOwn(snapshot.values, section)) {
       machineAudit(req, "not-found", { revision: snapshot.revision, section });
@@ -657,20 +785,12 @@ export function createKernelApp(options) {
         "A valid dotted Register key is required.",
       );
     }
-    const snapshot = store.getRegisterMachineSnapshot();
-    let value = snapshot.values;
-    for (const part of key.split(".")) {
-      if (!value || typeof value !== "object" || !Object.hasOwn(value, part)) {
-        machineAudit(req, "not-found", { revision: snapshot.revision, key });
-        return machineError(
-          req,
-          res,
-          404,
-          "REGISTER_KEY_NOT_FOUND",
-          "The requested Register key was not found.",
-        );
-      }
-      value = value[part];
+    const snapshot = publishableRegisterSnapshot(req, res);
+    if (!snapshot) return;
+    const value = nestedRegisterValue(snapshot.values, key);
+    if (value === undefined) {
+      machineAudit(req, "not-found", { revision: snapshot.revision, key });
+      return machineError(req, res, 404, "REGISTER_KEY_NOT_FOUND", "The requested Register key was not found.");
     }
     if (applyConditionalHeaders(req, res, "Register", snapshot)) return;
     machineAudit(req, "success", { revision: snapshot.revision, key });
@@ -680,6 +800,73 @@ export function createKernelApp(options) {
       key,
       value,
     });
+  });
+
+  app.post("/api/v1/register/resolve", requireMachine, async (req, res, next) => {
+    try {
+      const submitted = req.body?.keys;
+      if (
+        !Array.isArray(submitted)
+        || submitted.length < 1
+        || submitted.length > MAX_VOLT_REFERENCES
+        || submitted.some((key) => typeof key !== "string" || !SAFE_KEY.test(key.trim()))
+      ) {
+        machineAudit(req, "invalid", { reason: "invalid-keys" });
+        return machineError(req, res, 400, "REGISTER_KEYS_INVALID", "keys must contain between 1 and 20 valid dotted Register keys.");
+      }
+      const keys = [...new Set(submitted.map((key) => key.trim()))];
+      const address = req.ip || req.socket.remoteAddress || "unknown";
+      const now = Date.now();
+      if (!recordResolutionAttempt(address, now)) {
+        machineAudit(req, "blocked", { reason: "rate-limit", key_count: keys.length });
+        return machineError(req, res, 429, "REGISTER_RESOLUTION_RATE_LIMITED", "Too many resolution requests; retry later.");
+      }
+
+      const snapshot = publishableRegisterSnapshot(req, res);
+      if (!snapshot) return;
+      const selected = new Map();
+      const references = [];
+      for (const key of keys) {
+        const value = nestedRegisterValue(snapshot.values, key);
+        if (value === undefined) {
+          machineAudit(req, "not-found", { revision: snapshot.revision, key_count: keys.length });
+          return machineError(req, res, 404, "REGISTER_KEY_NOT_FOUND", "A requested Register key was not found.");
+        }
+        if (typeof value !== "string") {
+          machineAudit(req, "invalid", { revision: snapshot.revision, reason: "non-string-value", key_count: keys.length });
+          return machineError(req, res, 422, "REGISTER_VALUE_INVALID", "A requested Register value is not a string.");
+        }
+        selected.set(key, value);
+        references.push(value);
+      }
+
+      const uniqueReferences = [...new Set(references)];
+      const volt = uniqueReferences.length ? await activeVoltClient().resolve(uniqueReferences) : null;
+      const values = {};
+      for (const [key, storedValue] of selected) {
+        const resolved = volt.values[storedValue];
+        values[key] = {
+          value: resolved.value,
+          secret: resolved.visibility === "secret",
+          volt_revision: resolved.revision,
+        };
+      }
+      machineAudit(req, "success", {
+        revision: snapshot.revision,
+        key_count: keys.length,
+        volt_value_count: uniqueReferences.length,
+      });
+      res.setHeader("Cache-Control", "no-store, private");
+      res.setHeader("Pragma", "no-cache");
+      return sendMachineJson(res, REGISTER_MEDIA_TYPE, {
+        schema: "exocortex.register.resolution.v1",
+        register_revision: snapshot.revision,
+        values,
+      });
+    } catch (error) {
+      machineAudit(req, "failed", { code: error?.code ?? "INTERNAL_ERROR" });
+      next(error);
+    }
   });
 
   function constitutionState() {
@@ -742,15 +929,18 @@ export function createKernelApp(options) {
       store.audit("anonymous", "auth.login", "operator", "denied", { reason: "rate-limit" });
       return res.status(429).json({ error: "Too many attempts; retry later" });
     }
-    const username = typeof req.body?.username === "string" ? req.body.username.trim() : "";
-    const password = typeof req.body?.password === "string" ? req.body.password : "";
-    const usernameMatches = verifyApiToken(username, adminUsername);
-    const passwordMatches = verifyPassword(password, store.getPasswordHash());
-    if (!usernameMatches || !passwordMatches) {
+    const submittedAccessKey = typeof req.body?.access_key === "string"
+      ? req.body.access_key
+      : typeof req.body?.password === "string"
+        && typeof req.body?.username === "string"
+        && verifyApiToken(req.body.username.trim(), legacyAdminUsername)
+        ? req.body.password
+        : "";
+    if (!verifyPassword(submittedAccessKey, store.getPasswordHash())) {
       attempts.push(timestamp);
       loginAttempts.set(ip, attempts);
       store.audit("anonymous", "auth.login", "operator", "denied", { reason: "invalid-credentials" });
-      return res.status(401).json({ error: "Invalid username or password" });
+      return res.status(401).json({ error: "Invalid Access Key" });
     }
     loginAttempts.delete(ip);
     const token = createSessionToken(sessionSecret, store.getAuthGeneration());
@@ -782,6 +972,14 @@ export function createKernelApp(options) {
 
   app.get("/api/dashboard", requireOperator, (_req, res) => {
     res.json(metrics.read());
+  });
+
+  app.get("/api/service-statuses", requireOperator, async (_req, res, next) => {
+    try {
+      res.json(await serviceStatuses.snapshot());
+    } catch (error) {
+      next(error);
+    }
   });
 
   app.get("/api/documents/:type", requireOperator, (req, res, next) => {
@@ -831,7 +1029,7 @@ export function createKernelApp(options) {
   });
 
   app.get("/api/register", requireOperator, (req, res) => {
-    res.json(store.getRegisterSnapshot(req.auth.kind === "operator"));
+    res.json(operatorRegisterSnapshot(safeActor(req)));
   });
 
   app.get("/api/register/versions", requireOperator, (req, res) => {
@@ -841,9 +1039,12 @@ export function createKernelApp(options) {
   app.post("/api/register/restore", requireOperator, (req, res, next) => {
     try {
       const revision = typeof req.body?.revision === "string" ? req.body.revision : "";
-      const restored = store.restoreRegister(revision, safeActor(req));
+      const actor = safeActor(req);
+      // Legacy revisions remain operator-restorable during migration, but any
+      // restored literal immediately blocks machine publication until remapped.
+      const restored = store.restoreRegister(revision, actor);
       if (!restored) return res.status(404).json({ error: "Register revision not found" });
-      res.status(201).json(restored);
+      res.status(201).json(operatorRegisterSnapshot(actor));
     } catch (error) {
       next(error);
     }
@@ -851,7 +1052,9 @@ export function createKernelApp(options) {
 
   app.post("/api/register/entries", requireOperator, (req, res, next) => {
     try {
-      res.status(201).json(store.createRegisterEntry(validateRegisterInput(req.body), safeActor(req)));
+      const actor = safeActor(req);
+      store.createRegisterEntry(validateRegisterInput(req.body), actor);
+      res.status(201).json(operatorRegisterSnapshot(actor));
     } catch (error) {
       next(error);
     }
@@ -866,7 +1069,9 @@ export function createKernelApp(options) {
       if (new Set(inputs.map((item) => item.key)).size !== inputs.length) {
         return res.status(400).json({ error: "entries must not contain duplicate keys" });
       }
-      res.json(store.upsertRegisterEntries(inputs, safeActor(req)));
+      const actor = safeActor(req);
+      store.upsertRegisterEntries(inputs, actor);
+      res.json(operatorRegisterSnapshot(actor));
     } catch (error) {
       next(error);
     }
@@ -874,13 +1079,14 @@ export function createKernelApp(options) {
 
   app.put("/api/register/entries/:id", requireOperator, (req, res, next) => {
     try {
+      const actor = safeActor(req);
       const snapshot = store.updateRegisterEntry(
         req.params.id,
         validateRegisterInput(req.body),
-        safeActor(req),
+        actor,
       );
       if (!snapshot) return res.status(404).json({ error: "Register entry not found" });
-      res.json(snapshot);
+      res.json(operatorRegisterSnapshot(actor));
     } catch (error) {
       next(error);
     }
@@ -888,9 +1094,10 @@ export function createKernelApp(options) {
 
   app.delete("/api/register/entries/:id", requireOperator, (req, res, next) => {
     try {
-      const snapshot = store.deleteRegisterEntry(req.params.id, safeActor(req));
+      const actor = safeActor(req);
+      const snapshot = store.deleteRegisterEntry(req.params.id, actor);
       if (!snapshot) return res.status(404).json({ error: "Register entry not found" });
-      res.json(snapshot);
+      res.json(operatorRegisterSnapshot(actor));
     } catch (error) {
       next(error);
     }
@@ -901,7 +1108,9 @@ export function createKernelApp(options) {
       if (!Array.isArray(req.body?.ids) || req.body.ids.some((id) => typeof id !== "string")) {
         return res.status(400).json({ error: "ids must be an array of entry IDs" });
       }
-      res.json(store.reorderRegisterEntries(req.body.ids, safeActor(req)));
+      const actor = safeActor(req);
+      store.reorderRegisterEntries(req.body.ids, actor);
+      res.json(operatorRegisterSnapshot(actor));
     } catch (error) {
       next(error);
     }
@@ -941,23 +1150,68 @@ export function createKernelApp(options) {
 
   app.put("/api/settings", requireOperator, (req, res, next) => {
     try {
-      res.json(store.updateUiSettings(validateAppearance(req.body), safeActor(req)));
+      res.json(store.updateUiSettings(
+        validateUiSettings(req.body, store.getUiSettings()),
+        safeActor(req),
+      ));
     } catch (error) {
       next(error);
     }
   });
 
-  app.post("/api/settings/password", requireOperator, (req, res, next) => {
+  app.get("/api/settings/volt", requireOperator, (_req, res, next) => {
     try {
-      const currentPassword = typeof req.body?.current_password === "string" ? req.body.current_password : "";
-      const nextPassword = typeof req.body?.new_password === "string" ? req.body.new_password : "";
-      if (!verifyPassword(currentPassword, store.getPasswordHash())) {
-        return res.status(400).json({ error: "Current password is incorrect" });
+      const connection = store.getVoltConnectionSettings();
+      res.json({ url: connection.url, token_configured: Boolean(connection.encrypted_token) });
+    } catch (error) { next(error); }
+  });
+
+  app.put("/api/settings/volt", requireOperator, (req, res, next) => {
+    try {
+      const current = store.getVoltConnectionSettings();
+      let url;
+      try {
+        url = validateVoltUrl(typeof req.body?.url === "string" ? req.body.url.trim() : "");
+      } catch (error) {
+        throw Object.assign(new Error(error.message), { status: 400 });
       }
-      if (nextPassword.length < 12) {
-        return res.status(400).json({ error: "New password must contain at least 12 characters" });
+      const token = typeof req.body?.token === "string" ? req.body.token.trim() : "";
+      if (!url) throw Object.assign(new Error("Volt URL is required"), { status: 400 });
+      if (!token && !current.encrypted_token) {
+        throw Object.assign(new Error("Volt Kernel token is required"), { status: 400 });
       }
-      const generation = store.changePasswordHash(hashPassword(nextPassword), safeActor(req));
+      if (token && !validateVoltKernelToken(token)) {
+        throw Object.assign(new Error("Volt Kernel token must contain between 32 and 512 non-placeholder characters"), { status: 400 });
+      }
+      const saved = store.updateVoltConnectionSettings({
+        url,
+        encryptedToken: token ? encryptStoredSecret(token, sessionSecret) : "",
+      }, safeActor(req));
+      res.json({ url: saved.url, token_configured: Boolean(saved.encrypted_token) });
+    } catch (error) { next(error); }
+  });
+
+  const changeAccessKey = (req, res, next) => {
+    try {
+      const currentAccessKey = typeof req.body?.current_access_key === "string"
+        ? req.body.current_access_key
+        : typeof req.body?.current_password === "string" ? req.body.current_password : "";
+      const nextAccessKey = typeof req.body?.new_access_key === "string"
+        ? req.body.new_access_key
+        : typeof req.body?.new_password === "string" ? req.body.new_password : "";
+      const repeatedAccessKey = typeof req.body?.repeat_access_key === "string"
+        ? req.body.repeat_access_key
+        : nextAccessKey;
+      if (!verifyPassword(currentAccessKey, store.getPasswordHash())) {
+        return res.status(400).json({ error: "Current Access Key is incorrect" });
+      }
+      if (nextAccessKey !== repeatedAccessKey) {
+        return res.status(400).json({ error: "New Access Key entries do not match" });
+      }
+      if (nextAccessKey.length < 12) {
+        return res.status(400).json({ error: "New Access Key must contain at least 12 characters" });
+      }
+      const generation = store.changePasswordHash(hashPassword(nextAccessKey), safeActor(req));
       const token = createSessionToken(sessionSecret, generation);
       res.cookie("kernel_session", token, {
         httpOnly: true,
@@ -966,14 +1220,36 @@ export function createKernelApp(options) {
         maxAge: 12 * 60 * 60 * 1000,
         path: "/",
       });
-      res.json({ changed: true });
+      res.json({ changed: true, sessions_revoked: true });
+    } catch (error) {
+      next(error);
+    }
+  };
+  app.post("/api/settings/access-key", requireOperator, changeAccessKey);
+  app.post("/api/settings/password", requireOperator, changeAccessKey);
+
+  app.get("/api/audit", requireOperator, (req, res) => {
+    res.json({ events: store.listAudit(normalizeLimit(req.query.limit, 200, 1000)) });
+  });
+
+  app.get("/api/audit/changes", requireOperator, (req, res, next) => {
+    try {
+      const after = typeof req.query.after === "string" ? req.query.after : "";
+      if (!after) throw Object.assign(new Error("Audit cursor is required"), { status: 400 });
+      res.json({ events: store.listAuditAfter(after, normalizeLimit(req.query.limit, 100, 200)) });
     } catch (error) {
       next(error);
     }
   });
 
-  app.get("/api/audit", requireOperator, (req, res) => {
-    res.json({ events: store.listAudit(normalizeLimit(req.query.limit, 200, 1000)) });
+  app.get("/api/audit/older", requireOperator, (req, res, next) => {
+    try {
+      const before = typeof req.query.before === "string" ? req.query.before : "";
+      if (!before) throw Object.assign(new Error("Audit cursor is required"), { status: 400 });
+      res.json({ events: store.listAuditBefore(before, normalizeLimit(req.query.limit, 100, 200)) });
+    } catch (error) {
+      next(error);
+    }
   });
 
   app.get("/api/logs/download", requireOperator, (req, res) => {
@@ -1042,7 +1318,69 @@ export function createKernelApp(options) {
     res.send(archive);
   });
 
+  app.post("/api/internal/neptune/backup", (req, res) => {
+    if (!authorizeNeptuneExport(req)) return res.status(401).json({ error: "Neptune export token is required" });
+    const archive = buildKernelBackupArchive(store.exportBackup(), version);
+    const checksum = createHash("sha256").update(archive).digest("hex");
+    store.audit("neptune", "backup.export", "kernel", "success", { checksum, bytes: archive.byteLength });
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Length", String(archive.byteLength));
+    res.setHeader("X-Neptune-Archive-Schema", KERNEL_BACKUP_ARCHIVE_FORMAT);
+    res.setHeader("X-Neptune-Archive-Sha256", checksum);
+    res.setHeader("X-Neptune-Source-Version", version);
+    res.setHeader("Content-Disposition", `attachment; filename="kernel-backup-${new Date().toISOString().slice(0, 10)}.zip"`);
+    return res.send(archive);
+  });
+
+  app.get("/api/neptune/status", requireOperator, async (_req, res, next) => {
+    try { res.json(await neptuneClient.status()); } catch (error) { next(error); }
+  });
+
+  app.put("/api/neptune/schedule", requireOperator, async (req, res, next) => {
+    try {
+      const enabled = req.body?.enabled;
+      const intervalHours = Number(req.body?.interval_hours);
+      if (typeof enabled !== "boolean" || !Number.isInteger(intervalHours) || intervalHours < 1 || intervalHours > 8760) {
+        throw Object.assign(new Error("Neptune interval must be a whole number of hours between 1 and 8760"), { status: 400 });
+      }
+      await neptuneClient.schedule(enabled, intervalHours);
+      res.status(204).send();
+    } catch (error) { next(error); }
+  });
+
+  app.post("/api/neptune/runs", requireOperator, async (_req, res, next) => {
+    try { res.status(202).json(await neptuneClient.run()); } catch (error) { next(error); }
+  });
+
+  app.post("/api/neptune/update/check", requireOperator, async (req, res, next) => {
+    try {
+      const repositoryUrl = (await resolveCurrentRegisterKeys(["repositories.neptune.url"]))["repositories.neptune.url"];
+      if (!repositoryUrl) throw Object.assign(new Error("Register key repositories.neptune.url is missing"), { status: 409 });
+      const status = await neptuneClient.status();
+      const result = await checkGitHubRelease({ repositoryUrl, service: "neptune-linux", currentVersion: status.version, fetchImpl: releaseFetch, timeoutMs: updateCheckTimeoutMs });
+      store.audit(safeActor(req), "neptune.update.check", "neptune-linux", "success", { installed_version: status.version, available_version: result.available_version });
+      res.json(result);
+    } catch (error) { next(error); }
+  });
+
+  app.post("/api/neptune/update/install", requireOperator, async (req, res, next) => {
+    try {
+      const repositoryUrl = (await resolveCurrentRegisterKeys(["repositories.neptune.url"]))["repositories.neptune.url"];
+      const requestedVersion = String(req.body?.version ?? "");
+      if (!repositoryUrl) throw Object.assign(new Error("Register key repositories.neptune.url is missing"), { status: 409 });
+      const status = await neptuneClient.status();
+      const update = await checkGitHubRelease({ repositoryUrl, service: "neptune-linux", currentVersion: status.version, fetchImpl: releaseFetch, timeoutMs: updateCheckTimeoutMs });
+      if (!update.update_available || update.available_version !== requestedVersion) {
+        throw Object.assign(new Error("Requested Neptune version is not the current upgrade candidate"), { status: 409 });
+      }
+      const result = await updaterClient.updateNeptune({ head_id: updaterHeadId, version: requestedVersion });
+      store.audit(safeActor(req), "neptune.update.install", "neptune-linux", "success", { version: requestedVersion });
+      res.json(result);
+    } catch (error) { next(error); }
+  });
+
   const stagedBackupDir = path.join(dataDir, "pre-update-backups");
+  const stagedRestoreDir = path.join(dataDir, "restore-inspections");
   const pruneStagedBackups = () => {
     fs.mkdirSync(stagedBackupDir, { recursive: true });
     const cutoff = Date.now() - 24 * 60 * 60 * 1000;
@@ -1050,6 +1388,21 @@ export function createKernelApp(options) {
       .filter((entry) => entry.isFile() && (entry.name.endsWith(".zip") || entry.name.endsWith(".json")))
       .map((entry) => {
         const target = path.join(stagedBackupDir, entry.name);
+        return { target, modified: fs.statSync(target).mtimeMs };
+      })
+      .sort((left, right) => right.modified - left.modified);
+    entries.forEach((entry, index) => {
+      if (index >= 10 || entry.modified < cutoff) fs.rmSync(entry.target, { force: true });
+    });
+  };
+
+  const pruneRestoreInspections = () => {
+    fs.mkdirSync(stagedRestoreDir, { recursive: true });
+    const cutoff = Date.now() - 60 * 60 * 1000;
+    const entries = fs.readdirSync(stagedRestoreDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".upload"))
+      .map((entry) => {
+        const target = path.join(stagedRestoreDir, entry.name);
         return { target, modified: fs.statSync(target).mtimeMs };
       })
       .sort((left, right) => right.modified - left.modified);
@@ -1100,7 +1453,7 @@ export function createKernelApp(options) {
 
   app.get("/api/updater/status", requireOperator, async (_req, res, next) => {
     try {
-      res.json(await updaterClient.status());
+      res.json({ ...(await updaterClient.status()), kernel_version: version });
     } catch (error) {
       next(error);
     }
@@ -1140,6 +1493,7 @@ export function createKernelApp(options) {
           data_base64: backupBody.toString("base64"),
         },
       });
+      store.setLastUpdateJobId(job.id);
       store.audit(safeActor(req), "updater.install.requested", "kernel", "success", {
         job_id: job.id,
         version: versionToInstall,
@@ -1160,6 +1514,15 @@ export function createKernelApp(options) {
     }
   });
 
+  app.get("/api/updater/last-job", requireOperator, async (_req, res, next) => {
+    try {
+      const jobId = store.getLastUpdateJobId();
+      res.json(jobId ? await updaterClient.job(jobId) : null);
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.post("/api/updater/jobs/:id/rollback", requireOperator, async (req, res, next) => {
     try {
       res.status(202).json(await updaterClient.rollback(req.params.id));
@@ -1169,7 +1532,7 @@ export function createKernelApp(options) {
   });
 
   app.post(
-    "/api/backup/restore",
+    "/api/backup/inspect",
     requireOperator,
     backupUpload.single("file"),
     (req, res, next) => {
@@ -1178,7 +1541,66 @@ export function createKernelApp(options) {
           throw Object.assign(new Error("Select a Kernel backup ZIP file"), { status: 400 });
         }
         const backup = parseKernelBackupFile(req.file.buffer);
-        res.json(store.importBackup(backup, safeActor(req)));
+        if (
+          !backup
+          || backup.format !== "exocortex-kernel-backup"
+          || ![1, 2].includes(Number(backup.version))
+        ) {
+          throw Object.assign(new Error("Unsupported Kernel backup format"), { status: 400 });
+        }
+        pruneRestoreInspections();
+        const inspectionId = randomUUID();
+        const target = path.join(stagedRestoreDir, `${inspectionId}.upload`);
+        fs.writeFileSync(`${target}.tmp`, req.file.buffer, { mode: 0o600 });
+        fs.renameSync(`${target}.tmp`, target);
+        store.audit(safeActor(req), "backup.inspect", "kernel", "success", {
+          inspection_id: inspectionId,
+          filename: path.basename(req.file.originalname),
+          size: req.file.size,
+          backup_version: Number(backup.version),
+        });
+        res.status(201).json({
+          inspection_id: inspectionId,
+          filename: path.basename(req.file.originalname),
+          size: req.file.size,
+          format: backup.format,
+          version: Number(backup.version),
+          created_at: backup.created_at ?? null,
+        });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  app.post(
+    "/api/backup/restore",
+    requireOperator,
+    backupUpload.single("file"),
+    (req, res, next) => {
+      let inspectedTarget = null;
+      try {
+        let bytes = req.file?.buffer;
+        if (!bytes) {
+          const inspectionId = typeof req.body?.inspection_id === "string"
+            ? req.body.inspection_id
+            : "";
+          if (!/^[0-9a-f-]{36}$/i.test(inspectionId)) {
+            throw Object.assign(new Error("Inspect a Kernel backup before restoring it"), { status: 400 });
+          }
+          inspectedTarget = path.join(stagedRestoreDir, `${inspectionId}.upload`);
+          if (!fs.existsSync(inspectedTarget)) {
+            throw Object.assign(new Error("Backup inspection expired or was not found"), { status: 404 });
+          }
+          if (Date.now() - fs.statSync(inspectedTarget).mtimeMs > 60 * 60 * 1000) {
+            fs.rmSync(inspectedTarget, { force: true });
+            throw Object.assign(new Error("Backup inspection expired; inspect the file again"), { status: 409 });
+          }
+          bytes = fs.readFileSync(inspectedTarget);
+        }
+        const result = store.importBackup(parseKernelBackupFile(bytes), safeActor(req), validateRegisterInput);
+        if (inspectedTarget) fs.rmSync(inspectedTarget, { force: true });
+        res.json(result);
       } catch (error) {
         next(error);
       }
@@ -1202,7 +1624,7 @@ export function createKernelApp(options) {
         if (!req.file) {
           throw Object.assign(new Error("Kernel backup file is required"), { status: 400 });
         }
-        res.json(store.importBackup(parseKernelBackupFile(req.file.buffer), "updater"));
+        res.json(store.importBackup(parseKernelBackupFile(req.file.buffer), "updater", validateRegisterInput));
       } catch (error) {
         next(error);
       }
@@ -1210,8 +1632,8 @@ export function createKernelApp(options) {
   );
 
   app.post("/api/updater/check", requireOperator, async (req, res, next) => {
-    const repositoryUrl = store.getRegisterValue("repositories.kernel.url");
     try {
+      const repositoryUrl = (await resolveCurrentRegisterKeys(["repositories.kernel.url"]))["repositories.kernel.url"];
       if (!repositoryUrl) {
         throw Object.assign(
           new Error("Register key repositories.kernel.url is missing"),
@@ -1226,7 +1648,6 @@ export function createKernelApp(options) {
         timeoutMs: updateCheckTimeoutMs,
       });
       store.audit(safeActor(req), "updater.check", "kernel", "success", {
-        repository_url: repositoryUrl,
         installed_version: version,
         available_version: result.available_version,
         update_available: result.update_available,
@@ -1234,7 +1655,40 @@ export function createKernelApp(options) {
       res.json(result);
     } catch (error) {
       store.audit(safeActor(req), "updater.check", "kernel", "error", {
-        repository_url: repositoryUrl ?? null,
+        message: error?.message ?? String(error),
+      });
+      next(error);
+    }
+  });
+
+  app.post("/api/updater/self-update/check", requireOperator, async (req, res, next) => {
+    try {
+      const repositoryUrl = (await resolveCurrentRegisterKeys(["repositories.updater.url"]))["repositories.updater.url"];
+      if (!repositoryUrl) {
+        throw Object.assign(
+          new Error("Register key repositories.updater.url is missing"),
+          { status: 409 },
+        );
+      }
+      const status = await updaterClient.status();
+      if (!status.available || !status.version) {
+        throw Object.assign(new Error("Updater is not installed or is unavailable on this VPS"), { status: 503 });
+      }
+      const result = await checkGitHubRelease({
+        repositoryUrl,
+        service: "updater",
+        currentVersion: status.version,
+        fetchImpl: releaseFetch,
+        timeoutMs: updateCheckTimeoutMs,
+      });
+      store.audit(safeActor(req), "updater.self-update.check", "updater", "success", {
+        installed_version: status.version,
+        available_version: result.available_version,
+        update_available: result.update_available,
+      });
+      res.json(result);
+    } catch (error) {
+      store.audit(safeActor(req), "updater.self-update.check", "updater", "error", {
         message: error?.message ?? String(error),
       });
       next(error);
@@ -1250,7 +1704,9 @@ export function createKernelApp(options) {
     }));
     app.use((req, res, next) => {
       if (req.method !== "GET" || req.path !== "/") return next();
-      res.sendFile(path.join(distDir, "index.html"), { dotfiles: "deny" });
+      // Resolve inside the configured root so a legitimate parent such as
+      // C:\.projects is not mistaken for a requested dotfile on Windows.
+      res.sendFile("index.html", { root: distDir, dotfiles: "deny" });
     });
   }
 
@@ -1295,7 +1751,9 @@ export function createKernelApp(options) {
   app.locals.kernel = {
     store,
     metrics,
+    serviceStatuses,
     close() {
+      serviceStatuses.close();
       metrics.close();
       store.close();
     },

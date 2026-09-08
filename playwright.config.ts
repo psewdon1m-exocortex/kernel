@@ -1,4 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -20,11 +22,12 @@ export default defineConfig({
     timeout: 30_000,
     env: {
       KERNEL_PORT: "18183",
-      KERNEL_DATA_DIR: "./test-results/e2e-data",
-      KERNEL_ADMIN_USERNAME: "browser-operator",
-      KERNEL_ADMIN_PASSWORD: "browser-test-password",
+      KERNEL_DATA_DIR: join(tmpdir(), `kernel-e2e-${process.pid}`),
+      KERNEL_ACCESS_KEY: "browser-test-access-key",
       KERNEL_SESSION_SECRET: "browser-test-session-secret-32-characters-long",
       KERNEL_SERVICE_TOKEN: "browser-test-api-token-24-characters",
+      VOLT_URL: "http://127.0.0.1:18184",
+      VOLT_KERNEL_TOKEN: "browser-test-kernel-to-volt-token-32-characters",
       KERNEL_COOKIE_SECURE: "false",
     },
   },

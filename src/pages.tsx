@@ -20,11 +20,19 @@ import {
 } from "./components";
 import type {
   AuditEvent,
+  BackupInspection,
+  DashboardCardId,
+  DashboardMetric,
   DocumentRevision,
   Metrics,
+  NeptuneStatus,
   RegisterEntry,
   RegisterSnapshot,
   RevisionSummary,
+  SettingsSection,
+  ServiceId,
+  ServiceStatus,
+  ServiceStatusSnapshot,
   UiSettings,
   UpdateCheck,
   UpdateJob,
@@ -32,38 +40,24 @@ import type {
 } from "./types";
 
 type Notify = (message: string, kind?: "success" | "error" | "info") => void;
+type SettingsSaver = (settings: UiSettings, message?: string) => void | Promise<UiSettings>;
+type VoltConnectionSettings = { url: string; token_configured: boolean };
 
 function PageStatus({ children }: { children: string }) {
   return <div className="page-status" role="status">{children}</div>;
 }
 
-type MetricId = "cpu" | "ram" | "disk" | "uptime";
-
-const DEFAULT_METRIC_ORDER: MetricId[] = ["cpu", "ram", "disk", "uptime"];
-const DASHBOARD_ORDER_KEY = "kernel.dashboard.metric-order.v1";
-
-function readMetricOrder(): MetricId[] {
-  try {
-    const stored = JSON.parse(window.localStorage.getItem(DASHBOARD_ORDER_KEY) ?? "[]");
-    if (
-      Array.isArray(stored)
-      && stored.length === DEFAULT_METRIC_ORDER.length
-      && DEFAULT_METRIC_ORDER.every((id) => stored.includes(id))
-    ) {
-      return stored as MetricId[];
-    }
-  } catch {
-    // Invalid browser state falls back to the canonical 2-by-2 layout.
-  }
-  return DEFAULT_METRIC_ORDER;
-}
-
-export function DashboardPage() {
+export function DashboardPage({ settings, onSettings, notify }: {
+  settings: UiSettings;
+  onSettings: SettingsSaver;
+  notify: Notify;
+}) {
   const [metrics, setMetrics] = useState<Metrics>();
+  const [serviceSnapshot, setServiceSnapshot] = useState<ServiceStatusSnapshot>();
   const [offline, setOffline] = useState(false);
-  const [metricOrder, setMetricOrder] = useState<MetricId[]>(readMetricOrder);
-  const [draggedMetric, setDraggedMetric] = useState<MetricId | null>(null);
-  const [dragTarget, setDragTarget] = useState<MetricId | null>(null);
+  const [servicesOffline, setServicesOffline] = useState(false);
+  const [draggedCard, setDraggedCard] = useState<DashboardCardId | null>(null);
+  const [dragTarget, setDragTarget] = useState<DashboardCardId | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -87,125 +81,160 @@ export function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    window.localStorage.setItem(DASHBOARD_ORDER_KEY, JSON.stringify(metricOrder));
-  }, [metricOrder]);
+    let active = true;
+    const load = async () => {
+      try {
+        const value = await api<ServiceStatusSnapshot>("/api/service-statuses");
+        if (active) {
+          setServiceSnapshot(value);
+          setServicesOffline(false);
+        }
+      } catch {
+        if (active) setServicesOffline(true);
+      }
+    };
+    void load();
+    const timer = window.setInterval(load, 10_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, []);
 
-  const cards: Record<MetricId, {
+  const cards: Record<DashboardMetric, {
     title: string;
     value: string;
     percent?: number | null;
-    rows: Array<[string, string]>;
   }> = {
     cpu: {
-      title: "CPU",
-      value: percent(metrics?.cpu.usage_percent),
+      title: "CPU Usage",
+      value: metrics
+        ? `${percent(metrics.cpu.usage_percent)}  -  cores: ${metrics.cpu.cores}`
+        : "Loading...",
       percent: metrics?.cpu.usage_percent,
-      rows: [["Current usage", percent(metrics?.cpu.usage_percent)]],
     },
     ram: {
-      title: "RAM",
-      value: formatBytes(metrics?.ram.used_bytes),
+      title: "RAM Usage",
+      value: metrics
+        ? `${percent(metrics.ram.percent)}  -  ${formatBytes(metrics.ram.used_bytes)}/${formatBytes(metrics.ram.total_bytes)}`
+        : "Loading...",
       percent: ratioPercent(metrics?.ram.used_bytes, metrics?.ram.total_bytes),
-      rows: [
-        ["Used", formatBytes(metrics?.ram.used_bytes)],
-        ["Free", formatBytes(metrics?.ram.free_bytes)],
-        ["Total", formatBytes(metrics?.ram.total_bytes)],
-      ],
     },
     disk: {
-      title: "DISK",
-      value: formatBytes(metrics?.disk.used_bytes),
+      title: "Disk Usage",
+      value: metrics
+        ? `${percent(metrics.disk.percent)}  -  ${formatBytes(metrics.disk.used_bytes)}/${formatBytes(metrics.disk.total_bytes)}`
+        : "Loading...",
       percent: ratioPercent(metrics?.disk.used_bytes, metrics?.disk.total_bytes),
-      rows: [
-        ["Used", formatBytes(metrics?.disk.used_bytes)],
-        ["Free", formatBytes(metrics?.disk.free_bytes)],
-        ["Total", formatBytes(metrics?.disk.total_bytes)],
-      ],
     },
     uptime: {
-      title: "UPTIME",
-      value: formatDuration(metrics?.uptime_seconds),
-      rows: [
-        ["Current", formatDuration(metrics?.uptime_seconds)],
-        ["Seconds", metrics?.uptime_seconds == null
-          ? "N/A"
-          : metrics.uptime_seconds.toLocaleString("en-US")],
-      ],
+      title: "Uptime",
+      value: metrics ? `Active: ${formatDuration(metrics.uptime_seconds)}` : "Loading...",
     },
   };
 
-  const moveMetric = (target: MetricId) => {
-    if (!draggedMetric || draggedMetric === target) return;
-    setMetricOrder((current) => {
-      const next = [...current];
-      const from = next.indexOf(draggedMetric);
-      const to = next.indexOf(target);
-      [next[from], next[to]] = [next[to], next[from]];
-      return next;
-    });
+  const serviceById = new Map(serviceSnapshot?.services.map((service) => [service.id, service]) ?? []);
+
+  const cardTitle = (id: DashboardCardId) => id.startsWith("service-")
+    ? SERVICE_CARDS.find((item) => item.cardId === id)?.name ?? id
+    : cards[id as DashboardMetric].title;
+
+  const moveCard = (source: DashboardCardId, target: DashboardCardId) => {
+    if (source === target) return;
+    const nextOrder = [...settings.presentation.dashboard_order];
+    const from = nextOrder.indexOf(source);
+    const to = nextOrder.indexOf(target);
+    [nextOrder[from], nextOrder[to]] = [nextOrder[to], nextOrder[from]];
+    void onSettings({
+      ...settings,
+      presentation: { ...settings.presentation, dashboard_order: nextOrder },
+    }, "Dashboard order saved");
+  };
+
+  const moveByKeyboard = (id: DashboardCardId, delta: -1 | 1) => {
+    const order = settings.presentation.dashboard_order;
+    const index = order.indexOf(id);
+    const target = index + delta;
+    if (target < 0 || target >= order.length) return;
+    moveCard(id, order[target]);
+    notify(`${cardTitle(id)} moved to position ${target + 1}`, "info");
   };
 
   return (
     <section className="page-body">
-      <div className={`system-line ${offline ? "is-error" : "is-healthy"}`}>
-        <span>{offline ? "Local telemetry unavailable" : "Local VPS telemetry"}</span>
-      </div>
-      <div className="dashboard-grid" aria-label="System telemetry">
-        {metricOrder.map((id) => (
-          <MetricCard
-            key={id}
-            id={id}
-            {...cards[id]}
-            dragging={draggedMetric === id}
-            dragTarget={dragTarget === id && draggedMetric !== id}
-            onDragStart={(event) => {
-              setDraggedMetric(id);
+      <span className="sr-only" role="status">
+        {offline ? "Local telemetry unavailable" : "Local VPS telemetry available"}
+        {servicesOffline ? "; service availability unavailable" : "; service availability loaded"}
+      </span>
+      <div className="dashboard-grid" aria-label="System telemetry and service availability">
+        {settings.presentation.dashboard_order.map((id, index) => {
+          const interaction = {
+            dragging: draggedCard === id,
+            dragTarget: dragTarget === id && draggedCard !== id,
+            onDragStart: (event) => {
+              setDraggedCard(id);
               event.dataTransfer.effectAllowed = "move";
               event.dataTransfer.setData("text/plain", id);
-            }}
-            onDragOver={(event) => {
+            },
+            onDragOver: (event) => {
               event.preventDefault();
               event.dataTransfer.dropEffect = "move";
               setDragTarget(id);
-            }}
-            onDragLeave={() => {
+            },
+            onDragLeave: () => {
               setDragTarget((current) => current === id ? null : current);
-            }}
-            onDrop={(event) => {
+            },
+            onDrop: (event) => {
               event.preventDefault();
-              moveMetric(id);
+              if (draggedCard) moveCard(draggedCard, id);
               setDragTarget(null);
-            }}
-            onDragEnd={() => {
-              setDraggedMetric(null);
+            },
+            onDragEnd: () => {
+              setDraggedCard(null);
               setDragTarget(null);
-            }}
-          />
-        ))}
+            },
+            onMove: (delta) => moveByKeyboard(id, delta),
+          } satisfies DashboardCardInteractions;
+          if (id.startsWith("service-")) {
+            const serviceId = id.slice("service-".length) as ServiceId;
+            const metadata = SERVICE_CARDS.find((item) => item.id === serviceId)!;
+            return (
+              <ServiceStatusCard
+                key={id}
+                id={id}
+                ordinal={index + 1}
+                name={metadata.name}
+                service={serviceById.get(serviceId)}
+                {...interaction}
+              />
+            );
+          }
+          const metricId = id as DashboardMetric;
+          return (
+            <MetricCard
+              key={id}
+              id={metricId}
+              ordinal={index + 1}
+              {...cards[metricId]}
+              {...interaction}
+            />
+          );
+        })}
       </div>
     </section>
   );
 }
 
-function MetricCard({
-  id,
-  title,
-  value,
-  percent: valuePercent,
-  rows,
-  dragging,
-  dragTarget,
-  onDragStart,
-  onDragOver,
-  onDragLeave,
-  onDrop,
-  onDragEnd,
-}: {
-  id: MetricId;
-  title: string;
-  value: string;
-  percent?: number | null;
-  rows: Array<[string, string]>;
+const SERVICE_CARDS: Array<{ id: ServiceId; cardId: DashboardCardId; name: string }> = [
+  { id: "kernel", cardId: "service-kernel", name: "KERNEL" },
+  { id: "chronos", cardId: "service-chronos", name: "Chronos" },
+  { id: "perimetr", cardId: "service-perimetr", name: "Perimetr" },
+  { id: "saturn", cardId: "service-saturn", name: "Saturn" },
+  { id: "laboratory", cardId: "service-laboratory", name: "Laboratory" },
+  { id: "volt", cardId: "service-volt", name: "Volt" },
+];
+
+interface DashboardCardInteractions {
   dragging: boolean;
   dragTarget: boolean;
   onDragStart: (event: DragEvent<HTMLElement>) => void;
@@ -213,36 +242,157 @@ function MetricCard({
   onDragLeave: () => void;
   onDrop: (event: DragEvent<HTMLElement>) => void;
   onDragEnd: () => void;
+  onMove: (delta: -1 | 1) => void;
+}
+
+function MetricCard({
+  id,
+  ordinal,
+  title,
+  value,
+  percent: valuePercent,
+  dragging,
+  dragTarget,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onDragEnd,
+  onMove,
+}: {
+  id: DashboardCardId;
+  ordinal: number;
+  title: string;
+  value: string;
+  percent?: number | null;
+  dragging: boolean;
+  dragTarget: boolean;
+  onDragStart: (event: DragEvent<HTMLElement>) => void;
+  onDragOver: (event: DragEvent<HTMLElement>) => void;
+  onDragLeave: () => void;
+  onDrop: (event: DragEvent<HTMLElement>) => void;
+  onDragEnd: () => void;
+  onMove: (delta: -1 | 1) => void;
 }) {
   return (
     <article
       className={`metric-card${dragging ? " is-dragging" : ""}${dragTarget ? " is-drag-target" : ""}`}
       data-dashboard-node={id}
       data-metric-id={id}
-      draggable
-      onDragStart={onDragStart}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
       onDragEnd={onDragEnd}
       aria-label={`${title} telemetry`}
     >
-      <header><span>{title}</span><span className="drag-mark" title="Drag block" aria-hidden="true">:::</span></header>
-      <strong className="metric-main">{value}</strong>
+      <span className="metric-ordinal">{String(ordinal).padStart(2, "0")}</span>
+      <div className="metric-copy">
+        <h2>{title}</h2>
+        <strong className="metric-main">{value}</strong>
+      </div>
+        <button
+          type="button"
+          className="drag-mark"
+          draggable
+          title="Drag, or use Ctrl+Arrow Left/Right to reorder"
+          aria-label={`Reorder ${title}`}
+          onDragStart={onDragStart}
+          onKeyDown={(event) => {
+            if (event.ctrlKey && event.key === "ArrowLeft") {
+              event.preventDefault();
+              onMove(-1);
+            } else if (event.ctrlKey && event.key === "ArrowRight") {
+              event.preventDefault();
+              onMove(1);
+            }
+          }}
+        ><span aria-hidden="true" /></button>
       {valuePercent != null && (
         <div className="meter" aria-label={`${title}: ${value}`}>
           <span style={{ width: `${Math.max(0, Math.min(100, valuePercent))}%` }} />
         </div>
       )}
-      {rows.length > 0 && (
-        <dl>
-          {rows.map(([label, item]) => (
-            <div key={label}><dt>{label}</dt><dd>{item}</dd></div>
-          ))}
-        </dl>
-      )}
     </article>
   );
+}
+
+function ServiceStatusCard({
+  id,
+  ordinal,
+  name,
+  service,
+  dragging,
+  dragTarget,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onDragEnd,
+  onMove,
+}: {
+  id: DashboardCardId;
+  ordinal: number;
+  name: string;
+  service?: ServiceStatus;
+} & DashboardCardInteractions) {
+  const status = service?.status ?? "unknown";
+  const edge = service?.checks.edge;
+  const readiness = service?.checks.readiness;
+  const readinessLabel = readiness?.level === "liveness" ? "LIVE" : "READY";
+  return (
+    <article
+      className={`metric-card service-status-card status-${status}${dragging ? " is-dragging" : ""}${dragTarget ? " is-drag-target" : ""}`}
+      data-dashboard-node={id}
+      data-service-id={service?.id ?? id.slice("service-".length)}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      onDragEnd={onDragEnd}
+      aria-label={`${name} availability: ${status}`}
+    >
+      <span className="metric-ordinal">{String(ordinal).padStart(2, "0")}</span>
+      <div className="metric-copy service-status-copy">
+        <div className="service-status-heading">
+          <h2>{name}</h2>
+          <strong className="service-state"><span aria-hidden="true" />{status.toUpperCase()}</strong>
+        </div>
+        <p className="service-host">{service?.hostname ?? "Endpoint is not configured"}</p>
+        <div className="service-checks">
+          <span>EDGE <strong className={`check-${edge?.state ?? "unknown"}`}>{(edge?.state ?? "unknown").toUpperCase()}</strong></span>
+          <span>{readinessLabel} <strong className={`check-${readiness?.state ?? "unknown"}`}>{(readiness?.state ?? "unknown").toUpperCase()}</strong></span>
+          {edge?.latency_ms != null && <span>{edge.latency_ms} ms</span>}
+          <span>{service?.checked_at ? `CHECKED ${formatServiceTime(service.checked_at)}` : "WAITING FOR CHECK"}</span>
+        </div>
+      </div>
+      <button
+        type="button"
+        className="drag-mark"
+        draggable
+        title="Drag, or use Ctrl+Arrow Left/Right to reorder"
+        aria-label={`Reorder ${name}`}
+        onDragStart={onDragStart}
+        onKeyDown={(event) => {
+          if (event.ctrlKey && event.key === "ArrowLeft") {
+            event.preventDefault();
+            onMove(-1);
+          } else if (event.ctrlKey && event.key === "ArrowRight") {
+            event.preventDefault();
+            onMove(1);
+          }
+        }}
+      ><span aria-hidden="true" /></button>
+    </article>
+  );
+}
+
+function formatServiceTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.valueOf())) return "UNKNOWN";
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(date);
 }
 
 function percent(value: number | null | undefined) {
@@ -392,12 +542,12 @@ export function RegisterPage({ notify }: { notify: Notify }) {
     }
   };
 
-  const commitOrder = async (targetId: string, after: boolean) => {
-    if (!snapshot || !dragId || dragId === targetId) return;
-    const ids = snapshot.entries.map((entry) => entry.id).filter((id) => id !== dragId);
+  const commitOrder = async (targetId: string, after: boolean, sourceId = dragId) => {
+    if (!snapshot || !sourceId || sourceId === targetId) return;
+    const ids = snapshot.entries.map((entry) => entry.id).filter((id) => id !== sourceId);
     let index = ids.indexOf(targetId);
     if (after) index += 1;
-    ids.splice(index, 0, dragId);
+    ids.splice(index, 0, sourceId);
     setDragId(undefined);
     setInsert(undefined);
     try {
@@ -454,15 +604,25 @@ export function RegisterPage({ notify }: { notify: Notify }) {
           <small>SHA-256 {shortHash(snapshot?.checksum)}</small>
         </div>
         <button type="button" className="primary-action" onClick={() => setEditing("new")}>
-          Add value
+          Add mapping
         </button>
         <button type="button" onClick={openHistory}>
           Versions
         </button>
       </div>
 
+      {snapshot?.value_migration?.required && (
+        <div className="register-migration-warning" role="alert">
+          <strong>Register publication is paused</strong>
+          <span>
+            Replace {snapshot.value_migration.entry_count} stored {snapshot.value_migration.entry_count === 1 ? "value" : "values"} with exact
+            {" "}<code>volt://&lt;entry-id&gt;/&lt;field-id&gt;</code> references. Existing values remain visible here only for migration and are not returned to services.
+          </span>
+        </div>
+      )}
+
       <div className="register-grid">
-        {visible.map((entry) => (
+        {visible.map((entry, visibleIndex) => (
           <article
             key={entry.id}
             className={`register-card ${insert?.id === entry.id ? (insert.after ? "insert-after" : "insert-before") : ""}`}
@@ -484,8 +644,26 @@ export function RegisterPage({ notify }: { notify: Notify }) {
             }}
           >
             <header>
+              <span className="register-ordinal">{String(visibleIndex + 1).padStart(2, "0")}</span>
               <strong>{entry.key}</strong>
-              <span className="drag-mark" title="Drag">⠿</span>
+              <button
+                type="button"
+                className="drag-mark"
+                title="Drag, or use Ctrl+Arrow Up/Down to reorder"
+                aria-label={`Reorder ${entry.key}`}
+                disabled={Boolean(search)}
+                onKeyDown={(event) => {
+                  const order = snapshot?.entries ?? [];
+                  const current = order.findIndex((item) => item.id === entry.id);
+                  if (event.ctrlKey && event.key === "ArrowUp" && current > 0) {
+                    event.preventDefault();
+                    void commitOrder(order[current - 1].id, false, entry.id);
+                  } else if (event.ctrlKey && event.key === "ArrowDown" && current < order.length - 1) {
+                    event.preventDefault();
+                    void commitOrder(order[current + 1].id, true, entry.id);
+                  }
+                }}
+              >⠿</button>
             </header>
             <code>{entry.value}</code>
             <p>{entry.description || "No description"}</p>
@@ -505,7 +683,7 @@ export function RegisterPage({ notify }: { notify: Notify }) {
 
       {editing && (
         <Modal
-          title={editing === "new" ? "ADD REGISTER VALUE" : "EDIT REGISTER VALUE"}
+          title={editing === "new" ? "Add Register mapping" : "Edit Register mapping"}
           onClose={() => !pending && setEditing(undefined)}
         >
           <EntryForm
@@ -519,7 +697,7 @@ export function RegisterPage({ notify }: { notify: Notify }) {
 
       {deleting && (
         <ConfirmDialog
-          title="DELETE REGISTER VALUE"
+          title="Delete Register mapping"
           message={`Register entry ${deleting.key} will be deleted.`}
           detail="A new Register revision will be created and the previous revision will remain in history."
           confirmLabel="Delete"
@@ -530,7 +708,7 @@ export function RegisterPage({ notify }: { notify: Notify }) {
       )}
 
       {historyOpen && (
-        <Modal title="REGISTER VERSIONS" width={900} onClose={() => setHistoryOpen(false)}>
+        <Modal title="Register versions" width={900} onClose={() => setHistoryOpen(false)}>
           <div className="version-list">
             {versions.map((version) => {
               const active = version.revision === snapshot?.revision;
@@ -558,7 +736,7 @@ export function RegisterPage({ notify }: { notify: Notify }) {
 
       {restore && (
         <ConfirmDialog
-          title="RESTORE REGISTER"
+          title="Restore Register"
           message={`Revision ${restore.revision} will be restored.`}
           detail="The current version will remain in history. Restore creates a new active immutable revision."
           confirmLabel="Restore"
@@ -571,7 +749,7 @@ export function RegisterPage({ notify }: { notify: Notify }) {
   );
 }
 
-export function SettingsPage({
+function LegacySettingsPage({
   settings,
   onSettings,
   notify,
@@ -1012,6 +1190,713 @@ export function SettingsPage({
           onConfirm={() => void installUpdate()}
           onClose={() => setConfirmUpdate(false)}
         />
+      )}
+    </section>
+  );
+}
+
+export function SettingsPage({
+  settings,
+  onSettings,
+  onPreviewAccent,
+  notify,
+}: {
+  settings: UiSettings;
+  onSettings: SettingsSaver;
+  onPreviewAccent(accent?: string): void;
+  notify: Notify;
+}) {
+  const [openSection, setOpenSection] = useState<SettingsSection>();
+  const [dragSection, setDragSection] = useState<SettingsSection>();
+  const [insertSection, setInsertSection] = useState<{ id: SettingsSection; after: boolean }>();
+  const [draftAccent, setDraftAccent] = useState(settings.colors.accent);
+  const [draftSidebarFixed, setDraftSidebarFixed] = useState(!settings.sidebar_auto_hide);
+  const [settingsPending, setSettingsPending] = useState(false);
+  const [accessKey, setAccessKey] = useState({ current: "", next: "", repeat: "" });
+  const [securityPending, setSecurityPending] = useState(false);
+  const [voltDialogOpen, setVoltDialogOpen] = useState(false);
+  const [voltConnection, setVoltConnection] = useState<VoltConnectionSettings>({ url: "", token_configured: false });
+  const [voltDraft, setVoltDraft] = useState({ url: "", token: "", repeat: "" });
+  const [voltPending, setVoltPending] = useState(false);
+  const [backupPending, setBackupPending] = useState(false);
+  const [neptune, setNeptune] = useState<NeptuneStatus>();
+  const [neptuneInterval, setNeptuneInterval] = useState(24);
+  const [neptunePending, setNeptunePending] = useState(false);
+  const [neptuneError, setNeptuneError] = useState("");
+  const [neptuneUpdate, setNeptuneUpdate] = useState<UpdateCheck>();
+  const [inspection, setInspection] = useState<BackupInspection>();
+  const backupInputRef = useRef<HTMLInputElement>(null);
+  const [updaterStatus, setUpdaterStatus] = useState<UpdaterStatus>();
+  const [registerReachability, setRegisterReachability] = useState<"checking" | "reachable" | "unreachable">("checking");
+  const [updateCheck, setUpdateCheck] = useState<UpdateCheck>();
+  const [updateJob, setUpdateJob] = useState<UpdateJob>();
+  const [updatePending, setUpdatePending] = useState(false);
+  const [updateError, setUpdateError] = useState("");
+  const [updaterUpdate, setUpdaterUpdate] = useState<UpdateCheck>();
+  const [updaterUpdatePending, setUpdaterUpdatePending] = useState(false);
+  const [updaterUpdateError, setUpdaterUpdateError] = useState("");
+  const [confirmUpdate, setConfirmUpdate] = useState(false);
+  const [audit, setAudit] = useState<AuditEvent[]>([]);
+  const [auditPending, setAuditPending] = useState(false);
+  const auditRef = useRef<AuditEvent[]>([]);
+
+  useEffect(() => {
+    auditRef.current = audit;
+  }, [audit]);
+
+  useEffect(() => () => onPreviewAccent(undefined), [onPreviewAccent]);
+
+  const loadUpdaterState = useCallback(async () => {
+    try {
+      const status = await api<UpdaterStatus>("/api/updater/status");
+      setUpdaterStatus(status);
+    } catch (error) {
+      setUpdaterStatus({
+        installed: false,
+        available: false,
+        status: "unavailable",
+        service: "updater",
+        message: (error as Error).message,
+      });
+    }
+    try {
+      const job = await api<UpdateJob | null>("/api/updater/last-job");
+      if (job) setUpdateJob(job);
+    } catch {
+      // A missing historical updater job does not block release discovery.
+    }
+  }, []);
+
+  useEffect(() => { void loadUpdaterState(); }, [loadUpdaterState]);
+
+  const loadVoltConnection = useCallback(async () => {
+    try {
+      const connection = await api<VoltConnectionSettings>("/api/settings/volt");
+      setVoltConnection(connection);
+      setVoltDraft((current) => ({ ...current, url: connection.url }));
+    } catch (error) {
+      notify((error as Error).message, "error");
+    }
+  }, [notify]);
+
+  useEffect(() => { void loadVoltConnection(); }, [loadVoltConnection]);
+
+  useEffect(() => {
+    let disposed = false;
+    setRegisterReachability("checking");
+    api("/api/register")
+      .then(() => { if (!disposed) setRegisterReachability("reachable"); })
+      .catch(() => { if (!disposed) setRegisterReachability("unreachable"); });
+    return () => { disposed = true; };
+  }, []);
+
+  const loadNeptune = useCallback(async () => {
+    try {
+      const status = await api<NeptuneStatus>("/api/neptune/status");
+      setNeptune(status);
+      setNeptuneInterval(status.project.interval_hours);
+      setNeptuneError("");
+    } catch (error) {
+      setNeptune(undefined);
+      setNeptuneError((error as Error).message);
+    }
+  }, []);
+
+  useEffect(() => { void loadNeptune(); }, [loadNeptune]);
+
+  useEffect(() => {
+    if (!updateJob || ["COMPLETED", "ROLLED_BACK", "FAILED", "ROLLBACK_FAILED"].includes(updateJob.state)) return;
+    const timer = window.setInterval(() => {
+      api<UpdateJob>(`/api/updater/jobs/${encodeURIComponent(updateJob.id)}`)
+        .then(setUpdateJob)
+        .catch((error: Error) => notify(error.message, "error"));
+    }, 1500);
+    return () => window.clearInterval(timer);
+  }, [notify, updateJob]);
+
+  const loadAudit = useCallback(async () => {
+    setAuditPending(true);
+    try {
+      const result = await api<{ events: AuditEvent[] }>("/api/audit?limit=100");
+      setAudit(result.events.slice(0, 1000));
+    } catch (error) {
+      notify((error as Error).message, "error");
+    } finally {
+      setAuditPending(false);
+    }
+  }, [notify]);
+
+  useEffect(() => {
+    void loadAudit();
+    const poll = async () => {
+      if (document.hidden || !auditRef.current[0]) return;
+      try {
+        const result = await api<{ events: AuditEvent[] }>(
+          `/api/audit/changes?after=${encodeURIComponent(auditRef.current[0].id)}&limit=100`,
+        );
+        if (!result.events.length) return;
+        setAudit((current) => {
+          const known = new Set(current.map((event) => event.id));
+          const incoming = result.events.filter((event) => !known.has(event.id)).reverse();
+          return [...incoming, ...current].slice(0, 1000);
+        });
+      } catch (error) {
+        notify((error as Error).message, "error");
+      }
+    };
+    const timer = window.setInterval(poll, 3000);
+    return () => window.clearInterval(timer);
+  }, [loadAudit, notify]);
+
+  const saveAppearance = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!/^#[0-9a-f]{6}$/i.test(draftAccent)) {
+      notify("Accent color must use #RRGGBB format", "error");
+      return;
+    }
+    setSettingsPending(true);
+    try {
+      const next = {
+        ...settings,
+        colors: { dark: "#000000", light: "#ffffff", accent: draftAccent.toLowerCase() },
+      };
+      const saved = await onSettings(next, "Accent color applied") ?? next;
+      setDraftAccent(saved.colors.accent);
+      onPreviewAccent(undefined);
+    } finally {
+      setSettingsPending(false);
+    }
+  };
+
+  const setSidebarFixed = async (fixed: boolean) => {
+    setDraftSidebarFixed(fixed);
+    setSettingsPending(true);
+    try {
+      const saved = await onSettings(
+        { ...settings, sidebar_auto_hide: !fixed },
+        fixed ? "Sidebar fixed on screen" : "Sidebar auto-hide enabled",
+      ) ?? { ...settings, sidebar_auto_hide: !fixed };
+      setDraftSidebarFixed(!saved.sidebar_auto_hide);
+    } finally {
+      setSettingsPending(false);
+    }
+  };
+
+  const changeAccessKey = async (event: FormEvent) => {
+    event.preventDefault();
+    if (accessKey.next !== accessKey.repeat) {
+      notify("New Access Key entries do not match", "error");
+      return;
+    }
+    setSecurityPending(true);
+    try {
+      await api("/api/settings/access-key", {
+        method: "POST",
+        body: JSON.stringify({
+          current_access_key: accessKey.current,
+          new_access_key: accessKey.next,
+          repeat_access_key: accessKey.repeat,
+        }),
+      });
+      setAccessKey({ current: "", next: "", repeat: "" });
+      setOpenSection(undefined);
+      notify("Access Key changed; other sessions were revoked");
+    } catch (error) {
+      notify((error as Error).message, "error");
+    } finally {
+      setSecurityPending(false);
+    }
+  };
+
+  const saveVoltConnection = async (event: FormEvent) => {
+    event.preventDefault();
+    if (voltDraft.token !== voltDraft.repeat) {
+      notify("Volt Kernel token entries do not match", "error");
+      return;
+    }
+    setVoltPending(true);
+    try {
+      const saved = await api<VoltConnectionSettings>("/api/settings/volt", {
+        method: "PUT",
+        body: JSON.stringify({ url: voltDraft.url, token: voltDraft.token }),
+      });
+      setVoltConnection(saved);
+      setVoltDraft({ url: saved.url, token: "", repeat: "" });
+      setVoltDialogOpen(false);
+      notify("Volt connection settings saved");
+    } catch (error) {
+      notify((error as Error).message, "error");
+    } finally {
+      setVoltPending(false);
+    }
+  };
+
+  const generateVoltToken = () => {
+    const bytes = crypto.getRandomValues(new Uint8Array(32));
+    const token = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+    setVoltDraft((current) => ({ ...current, token, repeat: token }));
+  };
+
+  const copyVoltToken = async () => {
+    if (!voltDraft.token) return;
+    try {
+      await navigator.clipboard.writeText(voltDraft.token);
+      notify("Volt Kernel token copied");
+    } catch {
+      notify("Could not copy the token; select it in the field", "error");
+    }
+  };
+
+  const downloadBlob = async (url: string, fallbackName: string) => {
+    const response = await fetch(url, { credentials: "same-origin" });
+    if (!response.ok) throw new Error(`Download failed with HTTP ${response.status}`);
+    const blob = await response.blob();
+    const disposition = response.headers.get("content-disposition") ?? "";
+    const filename = disposition.match(/filename="?([^";]+)"?/)?.[1] ?? fallbackName;
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+  };
+
+  const createBackup = async () => {
+    setBackupPending(true);
+    try {
+      await downloadBlob("/api/backup", `kernel-backup-${new Date().toISOString().slice(0, 10)}.zip`);
+      notify("Kernel backup created and downloaded");
+    } catch (error) {
+      notify((error as Error).message, "error");
+    } finally {
+      setBackupPending(false);
+    }
+  };
+
+  const inspectBackup = async (file?: File) => {
+    if (!file) return;
+    const form = new FormData();
+    form.append("file", file);
+    setBackupPending(true);
+    setInspection(undefined);
+    try {
+      setInspection(await api<BackupInspection>("/api/backup/inspect", { method: "POST", body: form }));
+    } catch (error) {
+      notify((error as Error).message, "error");
+      if (backupInputRef.current) backupInputRef.current.value = "";
+      setOpenSection(undefined);
+    } finally {
+      setBackupPending(false);
+    }
+  };
+
+  const restoreBackup = async () => {
+    if (!inspection) return;
+    setBackupPending(true);
+    try {
+      await api("/api/backup/restore", {
+        method: "POST",
+        body: JSON.stringify({ inspection_id: inspection.inspection_id }),
+      });
+      notify("Kernel backup restored");
+      window.location.reload();
+    } catch (error) {
+      notify((error as Error).message, "error");
+      setBackupPending(false);
+    }
+  };
+
+  const saveNeptuneSchedule = async (enabled: boolean) => {
+    setNeptunePending(true);
+    try {
+      await api("/api/neptune/schedule", { method: "PUT", body: JSON.stringify({ enabled, interval_hours: neptuneInterval }) });
+      await loadNeptune();
+      notify(enabled ? "Automatic Saturn backup enabled" : "Automatic Saturn backup disabled", "info");
+    } catch (error) { notify((error as Error).message, "error"); }
+    finally { setNeptunePending(false); }
+  };
+
+  const runNeptuneBackup = async () => {
+    setNeptunePending(true);
+    try {
+      await api("/api/neptune/runs", { method: "POST" });
+      await loadNeptune();
+      notify("Neptune backup accepted", "info");
+    } catch (error) { notify((error as Error).message, "error"); }
+    finally { setNeptunePending(false); }
+  };
+
+  const checkNeptuneUpdate = async () => {
+    setNeptunePending(true);
+    try {
+      const result = await api<UpdateCheck>("/api/neptune/update/check", { method: "POST" });
+      setNeptuneUpdate(result);
+      notify(result.update_available ? `Neptune ${result.available_version} is available` : "Neptune is up to date", "info");
+    }
+    catch (error) { notify((error as Error).message, "error"); }
+    finally { setNeptunePending(false); }
+  };
+
+  const installNeptuneUpdate = async () => {
+    const version = neptuneUpdate?.available_version;
+    if (!version) return;
+    setNeptunePending(true);
+    try {
+      await api("/api/neptune/update/install", { method: "POST", body: JSON.stringify({ version }) });
+      setNeptuneUpdate(undefined);
+      await loadNeptune();
+      notify(`Neptune ${version} installed`, "info");
+    } catch (error) { notify((error as Error).message, "error"); }
+    finally { setNeptunePending(false); }
+  };
+
+  const checkForUpdates = useCallback(async () => {
+    setUpdatePending(true);
+    setUpdateError("");
+    try {
+      const result = await api<UpdateCheck>("/api/updater/check", { method: "POST" });
+      setUpdateCheck(result);
+    } catch (error) {
+      setUpdateError((error as Error).message);
+    } finally {
+      setUpdatePending(false);
+    }
+  }, []);
+
+  const openUpdates = () => {
+    setOpenSection("updates");
+    void checkForUpdates();
+  };
+
+  const checkUpdaterUpdate = async () => {
+    setUpdaterUpdatePending(true);
+    setUpdaterUpdateError("");
+    try {
+      const result = await api<UpdateCheck>("/api/updater/self-update/check", { method: "POST" });
+      setUpdaterUpdate(result);
+      notify(result.update_available ? `Updater ${result.available_version} is available` : "Updater is up to date", "info");
+    } catch (error) {
+      const message = (error as Error).message;
+      setUpdaterUpdateError(message);
+      notify(message, "error");
+    } finally {
+      setUpdaterUpdatePending(false);
+    }
+  };
+
+  const stageBackupAndInstall = async () => {
+    if (!updateCheck?.available_version) return;
+    setUpdatePending(true);
+    try {
+      const staged = await api<{ id: string; filename: string; download_url: string }>("/api/backups", { method: "POST" });
+      await downloadBlob(staged.download_url, staged.filename);
+      const job = await api<UpdateJob>("/api/updater/install", {
+        method: "POST",
+        body: JSON.stringify({ version: updateCheck.available_version, backup_id: staged.id }),
+      });
+      setUpdateJob(job);
+      setConfirmUpdate(false);
+      notify("Backup downloaded; update job started", "info");
+    } catch (error) {
+      notify((error as Error).message, "error");
+    } finally {
+      setUpdatePending(false);
+    }
+  };
+
+  const rollbackUpdate = async () => {
+    if (!updateJob) return;
+    setUpdatePending(true);
+    try {
+      setUpdateJob(await api<UpdateJob>(`/api/updater/jobs/${encodeURIComponent(updateJob.id)}/rollback`, { method: "POST" }));
+      notify("Rollback requested", "info");
+    } catch (error) {
+      notify((error as Error).message, "error");
+    } finally {
+      setUpdatePending(false);
+    }
+  };
+
+  const setRevisionLogging = async (enabled: boolean) => {
+    setSettingsPending(true);
+    try {
+      await onSettings({ ...settings, revision_request_logging: enabled }, enabled ? "Revision request logging enabled" : "Revision request logging disabled");
+    } finally {
+      setSettingsPending(false);
+    }
+  };
+
+  const loadOlderAudit = async () => {
+    const cursor = audit.at(-1)?.id;
+    if (!cursor || audit.length >= 1000) return;
+    setAuditPending(true);
+    try {
+      const result = await api<{ events: AuditEvent[] }>(`/api/audit/older?before=${encodeURIComponent(cursor)}&limit=100`);
+      setAudit((current) => [...current, ...result.events].slice(0, 1000));
+    } catch (error) {
+      notify((error as Error).message, "error");
+    } finally {
+      setAuditPending(false);
+    }
+  };
+
+  const moveSection = (source: SettingsSection, target: SettingsSection, after: boolean) => {
+    if (source === target) return;
+    const order = settings.presentation.settings_order.filter((id) => id !== source);
+    let index = order.indexOf(target);
+    if (after) index += 1;
+    order.splice(index, 0, source);
+    setDragSection(undefined);
+    setInsertSection(undefined);
+    void onSettings({ ...settings, presentation: { ...settings.presentation, settings_order: order } }, "Settings order saved");
+  };
+
+  const sectionTitles: Record<SettingsSection, string> = {
+    appearance: "Appearance",
+    security: "Security",
+    backup: "Backup",
+    updates: "Updates",
+    logs: "Logs",
+    documents: "Documents",
+  };
+
+  const sectionContent = (id: SettingsSection) => {
+    if (id === "appearance") return (
+      <div className="settings-content appearance-content">
+        <div className="settings-group">
+          <h3>Color correction</h3>
+          <p>Changes preview immediately and apply to both authenticated views and sign-in.</p>
+          <form className="appearance-form" onSubmit={saveAppearance}>
+            <label className="color-swatch" aria-label="Accent color swatch">
+              <input type="color" value={/^#[0-9a-f]{6}$/i.test(draftAccent) ? draftAccent : "#00a8ff"} onChange={(event) => { setDraftAccent(event.target.value); onPreviewAccent(event.target.value); }} />
+            </label>
+            <label className="sr-only" htmlFor="accent-color-value">Accent color</label>
+            <input id="accent-color-value" className="accent-value" type="text" pattern="#[0-9a-fA-F]{6}" value={draftAccent.toUpperCase()} onChange={(event) => { const value = event.target.value; setDraftAccent(value); if (/^#[0-9a-f]{6}$/i.test(value)) onPreviewAccent(value); }} />
+            <button type="button" onClick={() => { setDraftAccent("#00a8ff"); onPreviewAccent("#00a8ff"); }}>Reset color</button>
+            <button type="submit" disabled={settingsPending}>{settingsPending ? "Applying..." : "Apply color"}</button>
+          </form>
+        </div>
+        <div className="settings-group sidebar-mode-group">
+          <h3>Left menu position</h3>
+          <p>Reveal the Sidebar from the edge or keep it fixed on wide screens.</p>
+          <label className="toggle-row">
+            <input type="checkbox" checked={draftSidebarFixed} disabled={settingsPending} onChange={(event) => void setSidebarFixed(event.target.checked)} />
+            <span>Keep sidebar fixed on screen</span>
+          </label>
+        </div>
+      </div>
+    );
+
+    if (id === "security") return (
+      <div className="settings-content security-content">
+        <div className="settings-group">
+          <h3>Changing Access Key</h3>
+          <p>Changing the operator Access Key revokes every other active browser session.</p>
+          <button type="button" className="section-action" onClick={() => setOpenSection("security")}>Change Access Key</button>
+        </div>
+        <div className="settings-group">
+          <h3>Volt connection</h3>
+          <p>URL: <strong>{voltConnection.url || "not configured"}</strong><br />Kernel token: <strong>{voltConnection.token_configured ? "configured" : "not configured"}</strong></p>
+          <button type="button" className="section-action" onClick={() => { setVoltDraft({ url: voltConnection.url, token: "", repeat: "" }); setVoltDialogOpen(true); }}>Configure Volt</button>
+        </div>
+      </div>
+    );
+
+    if (id === "backup") return (
+      <div className="settings-content backup-content">
+        <div className="settings-group">
+          <h3>System snapshot</h3>
+          <p>Logical snapshots contain documents, revisions, Register, Topology, settings and retained audit events, but no Access Key or service token.</p>
+          <button type="button" className="section-action" disabled={backupPending} onClick={() => void createBackup()}>{backupPending ? "Creating..." : "Create and download snapshot"}</button>
+        </div>
+        <div className="settings-group">
+          <h3>Restore snapshot</h3>
+          <p>Restoring snapshot.</p>
+          <button type="button" className="section-action" disabled={backupPending} onClick={() => { setInspection(undefined); if (backupInputRef.current) { backupInputRef.current.value = ""; backupInputRef.current.click(); } }}>{backupPending ? "Inspecting..." : "Browse local snapshot archive"}</button>
+          <input ref={backupInputRef} hidden type="file" accept=".zip,application/zip,.json,application/json" onChange={(event) => { const file = event.target.files?.[0]; if (!file) return; setOpenSection("backup"); void inspectBackup(file); }} />
+        </div>
+        <div className="settings-group backup-neptune-group">
+          <h3>Automatic backup to Saturn</h3>
+          <p>Neptune exports the same ZIP as the manual action and uploads it without changing its bytes.</p>
+          <div className="reachability-row backup-neptune-status" title={neptuneError || undefined}>
+            <span>Local Neptune agent:</span>
+            <strong className={neptune ? "is-reachable" : neptuneError ? "is-unreachable" : "is-checking"}>{neptune ? "Service Reachability" : neptuneError ? "Service Unavailable" : "Checking"}<i aria-hidden="true" /></strong>
+          </div>
+          <div className="backup-schedule-controls">
+            <div className="backup-schedule-fields">
+              <label className="toggle-row"><input type="checkbox" checked={neptune?.project.enabled ?? false} disabled={!neptune || neptunePending} onChange={(event) => void saveNeptuneSchedule(event.target.checked)} /><span>Enable automatic backups</span></label>
+              <label className="backup-interval-row"><span>Interval in hours:</span><input type="number" min={1} max={8760} value={neptuneInterval} disabled={!neptune || neptunePending} onChange={(event) => setNeptuneInterval(Number(event.target.value))} onBlur={() => { if (neptune) void saveNeptuneSchedule(neptune.project.enabled); }} /></label>
+            </div>
+            <button type="button" className="section-action backup-run-action" disabled={!neptune || neptunePending || neptune.active} onClick={() => void runNeptuneBackup()}>{neptune?.active ? "Backup in progress..." : "Back up to Saturn now"}</button>
+          </div>
+        </div>
+        <div className="settings-group backup-version-group">
+          <h3>Neptune version</h3>
+          <p>Current installed version: {neptune?.version ?? "unavailable"}{neptuneUpdate?.available_version ? ` · latest ${neptuneUpdate.available_version}` : ""}</p>
+          <button type="button" className="section-action" disabled={!neptune || neptunePending} onClick={() => void checkNeptuneUpdate()}>{neptunePending ? "Checking..." : "Check Neptune for updates"}</button>
+          {neptuneUpdate?.update_available ? <button type="button" className="section-action" disabled={neptunePending} onClick={() => void installNeptuneUpdate()}>{neptunePending ? "Installing..." : `Install Neptune ${neptuneUpdate.available_version}`}</button> : null}
+        </div>
+      </div>
+    );
+
+    if (id === "updates") return (
+      <div className="settings-content updates-content">
+        <div className="settings-group update-pipeline-group">
+          <h3>Update pipeline</h3>
+          <p>Release discovery comes from Kernel Register; replacement and rollback are performed by the local Updater.</p>
+          <p>Current installed version: <strong className="accent-text">{updaterStatus?.kernel_version ?? "Loading..."}</strong></p>
+        </div>
+        <div className="update-statuses">
+          <div className="reachability-row">
+            <span>Local updater agent:</span>
+            <strong className={updaterStatus?.available ? "is-reachable" : updaterStatus ? "is-unreachable" : "is-checking"}>{updaterStatus?.available ? "Service Reachability" : updaterStatus ? "Service Unavailable" : "Checking"}<i aria-hidden="true" /></strong>
+          </div>
+          <div className="reachability-row">
+            <span>Kernel Register:</span>
+            <strong className={`is-${registerReachability}`}>{registerReachability === "reachable" ? "Service Reachability" : registerReachability === "unreachable" ? "Service Unavailable" : "Checking"}<i aria-hidden="true" /></strong>
+          </div>
+        </div>
+        <button type="button" className="section-action update-check-action" disabled={updatePending} onClick={openUpdates}>{updatePending ? "Checking..." : "Check for updates"}</button>
+        <div className="settings-group updater-version-group">
+          <h3>Updater version</h3>
+          <p>Current installed version: {updaterStatus?.version ?? "unavailable"}{updaterUpdate?.available_version ? ` · latest ${updaterUpdate.available_version}` : ""}</p>
+          <button type="button" className="section-action" disabled={!updaterStatus?.available || updaterUpdatePending} onClick={() => void checkUpdaterUpdate()}>{updaterUpdatePending ? "Checking..." : "Check Updater for updates"}</button>
+          {updaterUpdateError && <p className="inline-error" role="alert">{updaterUpdateError}</p>}
+          {updaterUpdate?.update_available && <p className="hint updater-self-update-hint">Run <code>updater update --head kernel</code> on the VPS to install version {updaterUpdate.available_version} safely.</p>}
+        </div>
+      </div>
+    );
+
+    if (id === "logs") return (
+      <div className="settings-content logs-content">
+        <div className="logs-command-band">
+          <div>
+            <p>Compact operator and internal-service action stream.</p>
+            <label className="toggle-row"><input type="checkbox" checked={settings.revision_request_logging} disabled={settingsPending} onChange={(event) => void setRevisionLogging(event.target.checked)} /><span>Log internal-service revision requests</span></label>
+          </div>
+          <a className="button-link" href="/api/logs/download" download>Download archived logs</a>
+        </div>
+        <div className="audit-list" role="log">
+          <div className="audit-head"><strong>TYPE</strong><strong>BODY</strong><strong>TIME</strong></div>
+          {audit.map((event) => <div key={event.id}><span className={`audit-status is-${event.status}`}>/{event.status.toUpperCase()}</span><span>{event.action} · {event.target} · {event.actor}</span><time dateTime={event.created_at}>{formatLogDate(event.created_at)}</time></div>)}
+          {!audit.length && <p className="muted">{auditPending ? "Loading events..." : "The audit log is empty."}</p>}
+        </div>
+        <button type="button" className="compact-action" disabled={auditPending || audit.length >= 1000 || !audit.length} onClick={() => void loadOlderAudit()}>{auditPending ? "Loading..." : audit.length >= 1000 ? "Display limit reached" : "Load older events"}</button>
+      </div>
+    );
+
+    return (
+      <div className="settings-content documents-content">
+        <p className="settings-intro">Upload local Markdown files and restore immutable Overview and Constitution revisions.</p>
+        <div className="document-managers"><DocumentManager type="overview" notify={notify} onChanged={loadAudit} /><DocumentManager type="constitution" notify={notify} onChanged={loadAudit} /></div>
+      </div>
+    );
+  };
+
+  return (
+    <section className="settings-stack" aria-label="KERNEL settings">
+      {settings.presentation.settings_order.map((id, index) => {
+        const title = sectionTitles[id];
+        return (
+          <article
+            key={id}
+            data-settings-section={id}
+            className={`settings-section universal-card ${insertSection?.id === id ? (insertSection.after ? "insert-after" : "insert-before") : ""}`}
+            onDragEnd={() => { setDragSection(undefined); setInsertSection(undefined); }}
+            onDragOver={(event) => {
+              event.preventDefault();
+              const rect = event.currentTarget.getBoundingClientRect();
+              setInsertSection({ id, after: event.clientY > rect.top + rect.height / 2 });
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              if (dragSection) moveSection(dragSection, id, insertSection?.after ?? false);
+            }}
+          >
+            <header>
+              <span className="settings-number">{String(index + 1).padStart(2, "0")}</span>
+              <h2>{title}</h2>
+              <button
+                type="button"
+                className="drag-mark"
+                draggable
+                aria-label={`Reorder ${title}`}
+                title="Drag, or use Ctrl+Arrow Up/Down to reorder"
+                onDragStart={() => setDragSection(id)}
+                onKeyDown={(event) => {
+                  const order = settings.presentation.settings_order;
+                  const current = order.indexOf(id);
+                  if (event.ctrlKey && event.key === "ArrowUp" && current > 0) {
+                    event.preventDefault();
+                    moveSection(id, order[current - 1], false);
+                  } else if (event.ctrlKey && event.key === "ArrowDown" && current < order.length - 1) {
+                    event.preventDefault();
+                    moveSection(id, order[current + 1], true);
+                  }
+                }}
+              ><span aria-hidden="true" /></button>
+            </header>
+            {sectionContent(id)}
+          </article>
+        );
+      })}
+
+      {openSection === "security" && (
+        <Modal title="Security" onClose={() => !securityPending && setOpenSection(undefined)}>
+          <form className="form-stack" onSubmit={changeAccessKey}>
+            <label><span>Current Access Key</span><input type="password" autoComplete="current-password" required value={accessKey.current} onChange={(event) => setAccessKey({ ...accessKey, current: event.target.value })} /></label>
+            <label><span>New Access Key</span><input type="password" autoComplete="new-password" minLength={12} required value={accessKey.next} onChange={(event) => setAccessKey({ ...accessKey, next: event.target.value })} /></label>
+            <label><span>Repeat new Access Key</span><input type="password" autoComplete="new-password" minLength={12} required value={accessKey.repeat} onChange={(event) => setAccessKey({ ...accessKey, repeat: event.target.value })} /></label>
+            <p className="hint">Applying a new key revokes every other operator session.</p>
+            <div className="dialog-actions"><button type="button" disabled={securityPending} onClick={() => setOpenSection(undefined)}>Cancel</button><button type="submit" disabled={securityPending}>{securityPending ? "Changing..." : "Change Access Key"}</button></div>
+          </form>
+        </Modal>
+      )}
+
+      {voltDialogOpen && (
+        <Modal title="Volt connection" onClose={() => !voltPending && setVoltDialogOpen(false)}>
+          <form className="form-stack" onSubmit={saveVoltConnection}>
+            <label><span>Volt URL</span><input type="url" required placeholder="https://volt.example.org" value={voltDraft.url} onChange={(event) => setVoltDraft({ ...voltDraft, url: event.target.value })} /></label>
+            <label><span>VOLT_KERNEL_TOKEN</span><input type="password" autoComplete="new-password" minLength={32} placeholder={voltConnection.token_configured ? "Leave blank to keep the current token" : "At least 32 characters"} required={!voltConnection.token_configured} value={voltDraft.token} onChange={(event) => setVoltDraft({ ...voltDraft, token: event.target.value })} /></label>
+            <label><span>Repeat VOLT_KERNEL_TOKEN</span><input type="password" autoComplete="new-password" minLength={32} required={Boolean(voltDraft.token)} value={voltDraft.repeat} onChange={(event) => setVoltDraft({ ...voltDraft, repeat: event.target.value })} /></label>
+            <p className="hint">Set the same token in Volt Settings. Once saved, Kernel will not display it again.</p>
+            <div className="dialog-actions"><button type="button" disabled={voltPending} onClick={generateVoltToken}>Generate token</button><button type="button" disabled={voltPending || !voltDraft.token} onClick={() => void copyVoltToken()}>Copy token</button><button type="button" disabled={voltPending} onClick={() => setVoltDialogOpen(false)}>Cancel</button><button type="submit" disabled={voltPending}>{voltPending ? "Saving..." : "Save connection"}</button></div>
+          </form>
+        </Modal>
+      )}
+
+      {openSection === "backup" && (
+        <Modal title="Restore snapshot" width={720} onClose={() => !backupPending && setOpenSection(undefined)}>
+          <div className="backup-panel">
+            {backupPending && <p role="status">Inspecting the selected Kernel archive...</p>}
+            {inspection && (
+              <div className="inspection-card" role="status">
+                <strong>Inspection passed</strong>
+                <dl><div><dt>File</dt><dd>{inspection.filename}</dd></div><div><dt>Size</dt><dd>{formatBytes(inspection.size)}</dd></div><div><dt>Format</dt><dd>v{inspection.version}</dd></div><div><dt>Created</dt><dd>{formatDate(inspection.created_at)}</dd></div></dl>
+                <p className="danger-copy">Restore replaces current mutable state. Existing immutable revisions remain recoverable where supported.</p>
+                <button type="button" className="danger" disabled={backupPending} onClick={() => void restoreBackup()}>{backupPending ? "Restoring..." : "Confirm restore"}</button>
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
+
+      {openSection === "updates" && (
+        <Modal title="Updates" width={760} onClose={() => !updatePending && setOpenSection(undefined)}>
+          <div className="updater-settings">
+            <div className="updater-result"><span>Installed</span><strong>{updateCheck?.installed_version ?? updaterStatus?.kernel_version ?? "Loading"}</strong><span>Updater</span><strong>{updaterStatus?.available ? `Available ${updaterStatus.version ?? ""}` : "Unavailable"}</strong><span>Registry</span><strong>{updatePending ? "Checking" : updateError ? "Failed" : updateCheck ? "Checked" : "Not checked"}</strong></div>
+            {updateError && <p className="login-error" role="alert">{updateError}</p>}
+            {updateCheck && <div className="update-discovery"><h3>Discovery</h3><p>{updateCheck.update_available ? `Kernel ${updateCheck.available_version} is available.` : "No newer compatible Kernel release was found."}</p><p className="hint">GitHub release identity and semantic version are checked here. Artifact digests and health are verified by the privileged updater during installation.</p>{updateCheck.release_url && <a href={updateCheck.release_url} target="_blank" rel="noreferrer">Release notes</a>}</div>}
+            <div className="dialog-actions"><button type="button" disabled={updatePending} onClick={() => void checkForUpdates()}>{updatePending ? "Checking..." : "Check again"}</button>{updateCheck?.update_available && <button type="button" disabled={updatePending || !updaterStatus?.available} onClick={() => setConfirmUpdate(true)}>Install {updateCheck.available_version}</button>}</div>
+            {updateJob && <div className="updater-job" role="status"><span>Job</span><strong>{updateJob.id}</strong><span>State</span><strong>{updateJob.state}</strong>{updateJob.message && <p>{updateJob.message}</p>}{updateJob.rollback_available && <button type="button" className="danger" disabled={updatePending} onClick={() => void rollbackUpdate()}>Rollback</button>}</div>}
+          </div>
+        </Modal>
+      )}
+
+      {confirmUpdate && updateCheck?.available_version && (
+        <ConfirmDialog title="Install KERNEL update" message={`Install KERNEL ${updateCheck.available_version}?`} detail="A full backup is created and downloaded first. The updater then verifies artifacts, preserves volumes, checks service health and exposes rollback when available." confirmLabel="Create backup and install" pending={updatePending} onConfirm={() => void stageBackupAndInstall()} onClose={() => setConfirmUpdate(false)} />
       )}
     </section>
   );

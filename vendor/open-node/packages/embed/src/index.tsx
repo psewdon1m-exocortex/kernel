@@ -35,6 +35,7 @@ export interface CreateOpenNodeOptions {
   onSaveRequest?: (project: OpenNodeProject) => void | Promise<void>;
   visualOnly?: boolean;
   registerCoreNodes?: boolean;
+  wheelZoomRequiresModifier?: boolean;
 }
 
 export type OpenNodeEventName =
@@ -185,6 +186,7 @@ export function createOpenNode(options: CreateOpenNodeOptions = {}): OpenNodeIns
       mode: mode === "standalone" ? "standalone" : mode === "embedded-readonly" ? "embedded-readonly" : "embedded-edit",
       themeTokens: options.themeTokens,
       visualOnly,
+      wheelZoomRequiresModifier: options.wheelZoomRequiresModifier,
       onSaveRequest: async (project: OpenNodeProject) => {
         emit("saveRequested", project);
         await options.onSaveRequest?.(project);

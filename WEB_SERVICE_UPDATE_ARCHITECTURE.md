@@ -32,15 +32,16 @@ head service. Kernel and Perimetr never receive the Docker socket.
 The head's Settings page may check GitHub only after an explicit operator
 action. Installing a release is delegated through the local Unix socket.
 
-Updater reads these values from Kernel Register:
+Updater reads and resolves these referenced keys from Kernel Register:
 
 - `repositories.kernel.url`
 - `repositories.perimetr.url`
 - `repositories.updater.url` for manual updater self-update
 
-There are no duplicate repository URLs in local service `.env` files. Updater
-validates and caches the last-known-good Register snapshot, so a temporary
-Kernel outage does not prevent an already configured service update.
+There are no duplicate repository URLs in local service `.env` files. Register
+stores only `volt://` references. Updater validates and caches that reference
+snapshot, then resolves the repository key through Kernel for each operation;
+a fresh operation therefore requires available Kernel and Volt.
 
 ## Release artifact
 
@@ -80,8 +81,9 @@ manifest identity, compose checksum and exact OCI image digest.
    download, calculates its checksum and submits it to updater.
 5. Updater authenticates the head with its control token and rejects unknown
    heads, services, URLs, images and shell commands.
-6. Updater gets the service repository from current or last-known-good Register,
-   resolves the exact signed `<service>-v*` release and verifies all artifacts.
+6. Updater reads the service repository reference from current or cached
+   Register, resolves it through Kernel and Volt, then resolves the exact signed
+   `<service>-v*` release and verifies all artifacts.
 7. It records the current image, pulls the replacement by digest and changes
    only the allow-listed image variable in the head `.env`.
 8. It recreates only the target Compose service. Persistent volumes and other
@@ -96,7 +98,7 @@ Jobs and idempotency keys are persisted under `/var/lib/updater`.
 
 Replacing one Compose replica can briefly interrupt new HTTP connections.
 Unrelated containers and already running processes are not stopped. Services
-using Kernel continue with their last-known-good Register revision. Literal
+may continue with already resolved in-memory values. Literal
 zero-downtime HTTP requires multiple compatible replicas behind a reverse proxy
 and is outside the single-VPS baseline.
 

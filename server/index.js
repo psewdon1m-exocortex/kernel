@@ -2,8 +2,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createKernelApp } from "./app.js";
 import { validateRuntimeSecrets } from "./security.js";
+import fs from "node:fs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const voltKernelToken = process.env.VOLT_KERNEL_TOKEN_FILE
+  ? fs.readFileSync(path.resolve(process.env.VOLT_KERNEL_TOKEN_FILE), "utf8").trim()
+  : process.env.VOLT_KERNEL_TOKEN;
 const config = {
   port: Number(
     process.env.KERNEL_LISTEN_PORT
@@ -17,8 +21,10 @@ const config = {
     ? path.resolve(process.env.KERNEL_DEFAULTS_DIR)
     : path.join(ROOT, "data", "defaults"),
   distDir: path.join(ROOT, "dist"),
-  adminUsername: process.env.KERNEL_ADMIN_USERNAME,
-  adminPassword: process.env.KERNEL_ADMIN_PASSWORD,
+  // KERNEL_ADMIN_PASSWORD remains a one-release compatibility alias for
+  // installations prepared before the single Access Key migration.
+  accessKey: process.env.KERNEL_ACCESS_KEY ?? process.env.KERNEL_ADMIN_PASSWORD,
+  legacyAdminUsername: process.env.KERNEL_ADMIN_USERNAME,
   sessionSecret: process.env.KERNEL_SESSION_SECRET,
   apiToken: process.env.KERNEL_SERVICE_TOKEN ?? process.env.KERNEL_API_TOKEN,
   cookieSecure: process.env.KERNEL_COOKIE_SECURE === "true",
@@ -30,9 +36,18 @@ const config = {
   auditRetentionDays: Number(process.env.KERNEL_AUDIT_RETENTION_DAYS ?? 30),
   auditMaxBytes: Number(process.env.KERNEL_AUDIT_MAX_BYTES ?? 64 * 1024 * 1024),
   updateCheckTimeoutMs: Number(process.env.KERNEL_UPDATE_CHECK_TIMEOUT_MS ?? 5000),
+  serviceStatusIntervalMs: Number(process.env.KERNEL_SERVICE_STATUS_INTERVAL_MS ?? 30000),
+  serviceStatusTimeoutMs: Number(process.env.KERNEL_SERVICE_STATUS_TIMEOUT_MS ?? 3000),
   updaterSocketPath: process.env.UPDATER_SOCKET_PATH ?? "/run/exocortex/updater.sock",
   updaterHeadId: process.env.UPDATER_HEAD_ID ?? "kernel",
   updaterControlToken: process.env.UPDATER_CONTROL_TOKEN,
+  neptuneSocketPath: process.env.NEPTUNE_SOCKET_PATH ?? "/run/neptune/neptuned.sock",
+  neptuneProjectId: process.env.NEPTUNE_PROJECT_ID ?? "kernel",
+  neptuneControlTokenFile: process.env.NEPTUNE_CONTROL_TOKEN_FILE,
+  neptuneExportTokenFile: process.env.NEPTUNE_EXPORT_TOKEN_FILE,
+  voltUrl: process.env.VOLT_URL ?? "",
+  voltKernelToken,
+  voltTimeoutMs: Number(process.env.VOLT_TIMEOUT_MS ?? 3000),
 };
 
 validateRuntimeSecrets(config);

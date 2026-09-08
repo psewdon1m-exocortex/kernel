@@ -72,6 +72,7 @@ export interface OpenNodeEditorProps {
   onOpenRequest?: (source: string) => void | Promise<void>;
   onProjectChanged?: (project: OpenNodeProject) => void;
   visualOnly?: boolean;
+  wheelZoomRequiresModifier?: boolean;
 }
 
 export interface OpenNodeEditorHandle {
@@ -282,7 +283,7 @@ function browserDocumentMime(kind: BrowserDocumentKind): string {
 }
 
 export const OpenNodeEditor = forwardRef<OpenNodeEditorHandle, OpenNodeEditorProps>(function OpenNodeEditor(
-  { controller, mode = "embedded-edit", className = "", themeTokens, onSaveRequest, onOpenRequest, onProjectChanged, visualOnly = false },
+  { controller, mode = "embedded-edit", className = "", themeTokens, onSaveRequest, onOpenRequest, onProjectChanged, visualOnly = false, wheelZoomRequiresModifier = false },
   ref,
 ) {
   const project = useProject(controller.store);
@@ -339,6 +340,7 @@ export const OpenNodeEditor = forwardRef<OpenNodeEditorHandle, OpenNodeEditorPro
   const suppressActivationRef = useRef<{ elementId: string; until: number } | undefined>(undefined);
   const inspectorStateRef = useRef<{ open: boolean; elementId?: string }>({ open: false });
   const browserDocumentUrlsRef = useRef(new Set<string>());
+  const canvasPointerInsideRef = useRef(false);
 
   const elements = useMemo(() => [...project.groups, ...project.containers, ...project.nodes], [project]);
   const collapsedMembers = useMemo(() => project.settings.groupsVisible === false ? new Set<string>() : new Set(project.groups.filter((group) => group.collapsed).flatMap((group) => [...group.memberNodeIds, ...group.memberContainerIds])), [project.groups, project.settings.groupsVisible]);
@@ -391,13 +393,14 @@ export const OpenNodeEditor = forwardRef<OpenNodeEditorHandle, OpenNodeEditorPro
   useEffect(() => onProjectChanged?.(project), [project, onProjectChanged]);
 
   useEffect(() => {
+    if (readOnly) return;
     const warnBeforeClose = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", warnBeforeClose);
     return () => window.removeEventListener("beforeunload", warnBeforeClose);
-  }, []);
+  }, [readOnly]);
 
   useEffect(() => {
     const node = canvasRef.current;
@@ -747,6 +750,7 @@ export const OpenNodeEditor = forwardRef<OpenNodeEditorHandle, OpenNodeEditorPro
       if (isFormTarget(event.target)) return;
       const modifier = event.ctrlKey || event.metaKey;
       if (event.code === "Space") {
+        if (wheelZoomRequiresModifier && !canvasPointerInsideRef.current && document.activeElement !== canvasRef.current) return;
         const current = performance.now();
         if (current - lastSpaceRef.current < 320 && !event.repeat) commitViewport({ x: 0, y: 0, zoom: viewport.zoom });
         lastSpaceRef.current = current;
@@ -779,7 +783,7 @@ export const OpenNodeEditor = forwardRef<OpenNodeEditorHandle, OpenNodeEditorPro
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
     return () => { window.removeEventListener("keydown", onKeyDown); window.removeEventListener("keyup", onKeyUp); };
-  }, [activeSession?.status, clipboard, closeLibrary, commitViewport, controller.history, controller.store, copyIds, cutIds, deleteSelection, duplicateSelection, execute, libraryOpen, onSaveRequest, openLibraryAtPointer, project.settings.grid, readOnly, run, selection, toggleBypass, viewport.zoom, visualOnly]);
+  }, [activeSession?.status, clipboard, closeLibrary, commitViewport, controller.history, controller.store, copyIds, cutIds, deleteSelection, duplicateSelection, execute, libraryOpen, onSaveRequest, openLibraryAtPointer, project.settings.grid, readOnly, run, selection, toggleBypass, viewport.zoom, visualOnly, wheelZoomRequiresModifier]);
 
   const screenToWorld = useCallback((client: Point): Point => {
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -826,7 +830,7 @@ export const OpenNodeEditor = forwardRef<OpenNodeEditorHandle, OpenNodeEditorPro
     mouseWorldRef.current = world;
     if (pendingConnection) setPendingConnection({ ...pendingConnection, point: world });
     const currentAnnotation = interaction?.kind === "annotate" ? interaction : annotationInteractionRef.current;
-    if (currentAnnotation?.pointerId === event.pointerId) {
+    if (currentAnnotation && currentAnnotation.pointerId === event.pointerId) {
       const nextInteraction = {
         ...currentAnnotation,
         currentWorld: world,
@@ -880,7 +884,7 @@ export const OpenNodeEditor = forwardRef<OpenNodeEditorHandle, OpenNodeEditorPro
 
   const onCanvasPointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
     const completedAnnotation = interaction?.kind === "annotate" ? interaction : annotationInteractionRef.current;
-    if (completedAnnotation?.pointerId === event.pointerId && !readOnly) {
+    if (completedAnnotation && completedAnnotation.pointerId === event.pointerId && !readOnly) {
       const drawn = annotationFromInteraction(completedAnnotation);
       const annotation = drawn.size.width > 4 || drawn.size.height > 4
         ? drawn
@@ -1081,6 +1085,7 @@ export const OpenNodeEditor = forwardRef<OpenNodeEditorHandle, OpenNodeEditorPro
   };
 
   const onWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
+    if (wheelZoomRequiresModifier && !event.ctrlKey && !event.metaKey) return;
     event.preventDefault();
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
@@ -1351,6 +1356,8 @@ export const OpenNodeEditor = forwardRef<OpenNodeEditorHandle, OpenNodeEditorPro
           onPointerMove={onCanvasPointerMove}
           onPointerUp={onCanvasPointerUp}
           onPointerCancel={onCanvasPointerUp}
+          onPointerEnter={() => { canvasPointerInsideRef.current = true; }}
+          onPointerLeave={() => { canvasPointerInsideRef.current = false; }}
           onDoubleClick={onCanvasDoubleClick}
           onWheel={onWheel}
           onDrop={onDrop}

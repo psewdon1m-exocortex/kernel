@@ -21,12 +21,63 @@ export interface UiSettings {
   };
   sidebar_auto_hide: boolean;
   revision_request_logging: boolean;
+  presentation: {
+    navigation_order: Array<Exclude<ViewName, "documentation">>;
+    dashboard_order: DashboardCardId[];
+    settings_order: SettingsSection[];
+  };
   audit_limits: {
     max_entries: number;
     retention_days: number;
     max_bytes: number;
     stored_bytes: number;
   };
+}
+
+export type DashboardMetric = "cpu" | "ram" | "disk" | "uptime";
+export type ServiceId = "kernel" | "chronos" | "perimetr" | "saturn" | "laboratory" | "volt";
+export type ServiceDashboardCard = `service-${ServiceId}`;
+export type DashboardCardId = DashboardMetric | ServiceDashboardCard;
+export type SettingsSection = "appearance" | "security" | "backup" | "updates" | "logs" | "documents";
+
+export interface ServiceStatusCheck {
+  state: "pass" | "fail" | "unknown";
+  level?: "readiness" | "liveness";
+  latency_ms: number | null;
+  code: string;
+}
+
+export interface ServiceStatus {
+  id: ServiceId;
+  name: string;
+  status: "available" | "degraded" | "unavailable" | "unconfigured" | "stale" | "unknown";
+  hostname: string | null;
+  checked_at: string | null;
+  checks: {
+    edge: ServiceStatusCheck;
+    readiness: ServiceStatusCheck;
+  };
+  consecutive_failures: number;
+}
+
+export interface ServiceStatusSnapshot {
+  collected_at: string | null;
+  refresh_interval_seconds: number;
+  stale_after_seconds: number;
+  services: ServiceStatus[];
+}
+
+export interface NeptuneStatus {
+  product: "neptune-linux";
+  version: string;
+  client_instance_id: string;
+  project: {
+    projectId: string;
+    enabled: boolean;
+    interval_hours: number;
+    next_run_at?: string;
+  };
+  active: boolean;
 }
 
 export interface DocumentRevision {
@@ -56,6 +107,11 @@ export interface RegisterSnapshot {
   updated_at: string;
   values: Record<string, string>;
   entries: RegisterEntry[];
+  value_migration?: {
+    required: boolean;
+    entry_count: number;
+    entries: Array<{ id: string; key: string }>;
+  };
 }
 
 export interface RevisionSummary {
@@ -119,6 +175,8 @@ export interface UpdateCheck {
   release_url: string | null;
   published_at: string | null;
   prerelease: boolean;
+  discovery_status?: "verified-github-metadata";
+  artifact_verification?: "delegated-to-updater";
   apply_via: string;
   backup_required: boolean;
 }
@@ -129,8 +187,18 @@ export interface UpdaterStatus {
   status: string;
   service: string;
   version?: string;
+  kernel_version?: string;
   busy?: boolean;
   message?: string;
+}
+
+export interface BackupInspection {
+  inspection_id: string;
+  filename: string;
+  size: number;
+  format: string;
+  version: number;
+  created_at: string | null;
 }
 
 export interface UpdateJob {

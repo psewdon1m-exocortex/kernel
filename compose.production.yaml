@@ -11,10 +11,11 @@ services:
       KERNEL_LISTEN_PORT: "${KERNEL_LISTEN_PORT:-18180}"
       KERNEL_DATA_DIR: /app/data
       KERNEL_DEFAULTS_DIR: /app/defaults
-      KERNEL_ADMIN_USERNAME: "${KERNEL_ADMIN_USERNAME:?Set KERNEL_ADMIN_USERNAME in .env}"
-      KERNEL_ADMIN_PASSWORD: "${KERNEL_ADMIN_PASSWORD:?Set KERNEL_ADMIN_PASSWORD in .env}"
+      KERNEL_ACCESS_KEY: "${KERNEL_ACCESS_KEY:-}"
+      KERNEL_ADMIN_PASSWORD: "${KERNEL_ADMIN_PASSWORD:-}"
       KERNEL_SESSION_SECRET: "${KERNEL_SESSION_SECRET:?Set KERNEL_SESSION_SECRET in .env}"
       KERNEL_SERVICE_TOKEN: "${KERNEL_SERVICE_TOKEN:?Set KERNEL_SERVICE_TOKEN in .env}"
+      VOLT_TIMEOUT_MS: "${VOLT_TIMEOUT_MS:-3000}"
       KERNEL_COOKIE_SECURE: "${KERNEL_COOKIE_SECURE:-true}"
       KERNEL_TRUST_PROXY: "${KERNEL_TRUST_PROXY:-true}"
       KERNEL_DISK_PATH: /
@@ -26,13 +27,29 @@ services:
       UPDATER_SOCKET_PATH: /run/exocortex/updater.sock
       UPDATER_HEAD_ID: "${UPDATER_HEAD_ID:-kernel}"
       UPDATER_CONTROL_TOKEN: "${UPDATER_CONTROL_TOKEN:?Set UPDATER_CONTROL_TOKEN in .env}"
+      NEPTUNE_SOCKET_PATH: /run/neptune/neptuned.sock
+      NEPTUNE_PROJECT_ID: "${NEPTUNE_PROJECT_ID:-kernel}"
+      NEPTUNE_CONTROL_TOKEN_FILE: /run/secrets/neptune-control-token
+      NEPTUNE_EXPORT_TOKEN_FILE: /run/secrets/neptune-export-token
     volumes:
       - kernel-data:/app/data
       - type: bind
         source: "${UPDATER_SOCKET_DIR:-/run/exocortex}"
         target: /run/exocortex
+      - type: bind
+        source: "${NEPTUNE_SOCKET_DIR:-/run/neptune}"
+        target: /run/neptune
+      - type: bind
+        source: "${NEPTUNE_CONTROL_TOKEN_HOST_FILE:?Set NEPTUNE_CONTROL_TOKEN_HOST_FILE in .env}"
+        target: /run/secrets/neptune-control-token
+        read_only: true
+      - type: bind
+        source: "${NEPTUNE_EXPORT_TOKEN_HOST_FILE:?Set NEPTUNE_EXPORT_TOKEN_HOST_FILE in .env}"
+        target: /run/secrets/neptune-export-token
+        read_only: true
     group_add:
       - "${UPDATER_SOCKET_GID:?Set UPDATER_SOCKET_GID during VPS installation}"
+      - "${NEPTUNE_SOCKET_GID:?Set NEPTUNE_SOCKET_GID during Neptune installation}"
     read_only: true
     tmpfs:
       - /tmp:size=32m,noexec,nosuid,nodev

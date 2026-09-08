@@ -103,6 +103,8 @@ export async function checkGitHubRelease({
     release_url: available?.release.html_url ?? null,
     published_at: available?.release.published_at ?? null,
     prerelease: Boolean(available?.release.prerelease),
+    discovery_status: "verified-github-metadata",
+    artifact_verification: "delegated-to-updater",
     apply_via: "updater",
     backup_required: true,
   };

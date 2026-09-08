@@ -16,8 +16,8 @@ sudo kernel-install
 ```
 
 The bootstrap populates the release version and immutable image digest and
-generates the session, service and updater tokens. It never generates the
-operator username or password. Nginx, certificates, DNS and firewall policy
+generates the session, service, updater and local Kernel-to-Volt tokens. It
+never generates the operator Access Key. Nginx, certificates, DNS and firewall policy
 are intentionally handled separately through Sindri.
 
 The release bundle contains an independent `nginx.security.conf`. Include it
@@ -28,16 +28,19 @@ and rejects probe paths before proxying them to Kernel.
 
 Пассивный registry-сервис для одного VPS:
 
-- Dashboard с CPU, RAM, Disk и system uptime;
+- Dashboard с CPU, RAM, Disk, system uptime и кэшированными статусами доступности KERNEL, Chronos, Perimetr, Saturn, Laboratory и Volt;
 - versioned `overview.md` и `constitution.md`;
-- визуальная Topology Map на vendored Open Node;
+- визуальная Topology Map на встроенном Excalidraw с серверным автосохранением и историей версий;
 - Register с immutable revisions, checksum и restore-as-new;
 - Settings, backup и audit для единственного оператора;
 - read-only v1 API для внутренних сервисов.
 
-Kernel не выполняет исходящие запросы и не управляет другими сервисами.
-Внутренние системы сами читают опубликованные ревизии и сохраняют
-last-known-good.
+Kernel не выполняет фоновые исходящие запросы и не управляет другими сервисами;
+исключения — явно запущенная оператором проверка опубликованных релизов и
+синхронное разрешение зарегистрированных Volt-ссылок по запросу сервиса.
+Внутренние системы сами читают опубликованные ревизии со ссылками. Разрешённые
+значения живут только в оперативной памяти; новый запуск требует доступных
+Kernel и Volt.
 
 ## Границы сервисов
 
@@ -65,8 +68,9 @@ docker compose up -d --build
 http://127.0.0.1:18180
 ```
 
-Логин и пароль оператора задаются через `KERNEL_ADMIN_USERNAME` и
-`KERNEL_ADMIN_PASSWORD` в локальном `.env`.
+Единый ключ оператора задаётся через `KERNEL_ACCESS_KEY` в локальном `.env`.
+Во время staged migration существующий `KERNEL_ADMIN_PASSWORD` принимается как
+совместимый источник verifier; имя оператора больше не требуется.
 
 Production Compose contains no reverse proxy and publishes Kernel only on VPS
 loopback. One shared host-level Nginx owns TCP 80/443 and routes the Kernel SNI
@@ -97,6 +101,7 @@ GET  /api/v1/register/snapshot
 HEAD /api/v1/register/snapshot
 GET  /api/v1/register/sections/{section}
 GET  /api/v1/register/resolve?key={dotted.key}
+POST /api/v1/register/resolve   {"keys":["dotted.key"]}
 GET  /api/v1/constitution/raw
 GET  /api/v1/constitution/snapshot
 GET  /api/v1/constitution/meta
@@ -111,17 +116,21 @@ Modified`. Ответы содержат revision и SHA-256 checksum canonical 
 
 ## Service token
 
-`KERNEL_SERVICE_TOKEN` в локальном `.env` — bootstrap trust anchor. На первом
-запуске Kernel создаёт в Register запись:
+`KERNEL_SERVICE_TOKEN` в локальном `.env` — общий bootstrap trust anchor и
+никогда не публикуется через Register. С этим token сервис может читать machine
+API Kernel и передать до 20 Register keys в `POST /api/v1/register/resolve`.
+Каждое значение Register обязано быть строгой ссылкой
+`volt://<entry-id>/<field-id>`. Kernel разрешает все запрошенные ссылки в Volt
+от своего имени и возвращает сервису только готовое отображение ключей.
 
-```text
-services.kernel.service_token
-```
-
-Bootstrap-токен продолжает приниматься, поэтому сервис не может заблокировать
-себя: он сначала аутентифицируется локальным значением, затем читает
-распределённое значение из Register. Изменять Register-токен может только
-оператор; service token имеет только read-only доступ к machine API.
+Это сознательно простая модель доверенной зоны без ACL: любой сервис с
+`KERNEL_SERVICE_TOKEN` может разрешить любое значение текущей опубликованной
+ревизии Register. Компрометация одного сервиса поэтому открывает все значения
+Register. Отдельный `VOLT_KERNEL_TOKEN` известен только Kernel и Volt. Его
+задают в разделе Settings обоих приложений; Kernel хранит значение
+AES-256-GCM-зашифрованным с ключом, производным от `KERNEL_SESSION_SECRET`, а
+Volt хранит только SHA-256 verifier. Токен никогда не возвращается через API и
+не передаётся сервисам.
 
 ## Активный Register
 
@@ -132,11 +141,31 @@ repositories.agent.url
 repositories.pod.url
 repositories.sindri.url
 repositories.updater.url
+repositories.volt.url
 services.kernel.sni
 services.kernel.port
-services.kernel.service_token
+services.kernel.health.path
+services.kernel.health.contract
+services.chronos.sni
+services.chronos.port
+services.chronos.health.path
+services.chronos.health.contract
 services.perimetr.sni
 services.perimetr.port
+services.perimetr.health.path
+services.perimetr.health.contract
+services.saturn.sni
+services.saturn.port
+services.saturn.health.path
+services.saturn.health.contract
+services.laboratory.sni
+services.laboratory.port
+services.laboratory.health.path
+services.laboratory.health.contract
+services.volt.sni
+services.volt.port
+services.volt.health.path
+services.volt.health.contract
 intervals.kernel.refresh_sec
 ```
 
@@ -155,9 +184,16 @@ manifest.
 а не управление listener. Сам listener меняется вручную через
 `KERNEL_LISTEN_PORT`/`PERIMETR_LISTEN_PORT` с перезапуском контейнера.
 
+Backend Dashboard проверяет только известные сервисы из этого списка. Публичный
+SNI используется для отдельной EDGE-проверки, а `health.path` — для разрешённого
+health-контракта. Проверки выполняются с ограниченным timeout, без redirects и
+не превращают произвольные Register URL в сетевые probes. Neptune и Updater в
+Dashboard не проверяются.
+
 Perimetr делает conditional GET с периодом `intervals.kernel.refresh_sec`,
-проверяет schema/revision/checksum и атомарно сохраняет snapshot. При
-недоступности Kernel он продолжает работать с последней валидной ревизией.
+проверяет schema/revision/checksum и атомарно сохраняет reference snapshot.
+Перед применением он разрешает свои ключи через Kernel; фактические значения на
+диск не записываются.
 
 ## Данные и документы
 
@@ -166,9 +202,18 @@ Overview и Constitution изменяются только загрузкой `o
 `constitution.md` с устройства. Upload и restore создают новую immutable
 revision.
 
-Register обычно запрещает реальные секреты. Единственное явное исключение —
-`services.kernel.service_token`, добавленное по архитектурному решению для
-закрытой внутренней сети одного VPS.
+Register запрещает любые реальные значения и любые ссылки, кроме строгого
+формата `volt://<entry-id>/<field-id>`. Все ключи конфигурации, например
+`services.laboratory.ai.gemini_api_key`, оператор добавляет только как ссылку
+на поле Volt. Kernel разрешает ссылку только при явном machine-запросе и не
+сохраняет plaintext в Register, snapshots, audit или backups. Единственный
+machine token Volt хранится как одинаковый локальный secret file на серверах
+Kernel и Volt.
+Если существующая база содержит legacy-значения, Kernel не удаляет единственную
+копию автоматически: Register показывает оператору предупреждение, а machine
+API отвечает `REGISTER_VALUE_MIGRATION_REQUIRED`. После замены всех таких
+значений на Volt-ссылки старые value-bearing revisions очищаются и публикация
+возобновляется.
 
 ## Обновления Kernel и Perimetr
 
@@ -179,14 +224,20 @@ Production-обновление не должно клонировать и со
 
 Settings содержит операторский `Updater`: по явному запросу он читает
 `repositories.kernel.url` из Register и проверяет только релизы `kernel-v*`.
+Отдельная ручная проверка версии Updater читает `repositories.updater.url` и
+проверяет релизы `updater-v*`; безопасная установка самого Updater остаётся
+host-командой `updater update --head kernel`.
 Автоматического polling нет. Audit ограничен одновременно числом записей,
 возрастом и суммарным размером хранимых событий через
 `KERNEL_AUDIT_MAX_ENTRIES`, `KERNEL_AUDIT_RETENTION_DAYS` и
 `KERNEL_AUDIT_MAX_BYTES`. ZIP-архив подробных логов доступен оператору через
 `GET /api/logs/download`; web-интерфейс показывает сокращённое представление.
-Backup JSON можно как скачать, так и
-восстановить через Settings; восстановление создаёт новые актуальные ревизии и
-не меняет пароль оператора.
+Backup ZIP можно создать и скачать через Settings. Выбор локального архива
+открывается непосредственно из карточки; затем Restore проверяет его без
+изменения live state, показывает метаданные и требует отдельного подтверждения.
+Там же отображается доступность Neptune, настраивается расписание экспорта в
+Saturn и запускается немедленная копия. Импорт создаёт новые актуальные ревизии
+и не меняет Access Key.
 
 ## Разработка
 
@@ -194,12 +245,17 @@ Backup JSON можно как скачать, так и
 
 ```powershell
 npm install
-$env:KERNEL_ADMIN_PASSWORD='development-password'
-$env:KERNEL_ADMIN_USERNAME='operator'
+$env:KERNEL_ACCESS_KEY='development-access-key'
 $env:KERNEL_SESSION_SECRET='development-session-secret-at-least-32-characters'
 $env:KERNEL_SERVICE_TOKEN='development-service-token-at-least-24-characters'
 npm run check
 ```
+
+После входа откройте Settings → Security → Volt connection, укажите URL Volt и
+общий токен длиной не менее 32 символов. То же значение задайте в Volt Settings.
+Если меняется `KERNEL_SESSION_SECRET`, токен в Kernel необходимо задать заново.
+Старые `VOLT_URL`, `VOLT_KERNEL_TOKEN` и `VOLT_KERNEL_TOKEN_FILE` принимаются
+только как источник однократной миграции в настройки существующих установок.
 
 ## Документы
 

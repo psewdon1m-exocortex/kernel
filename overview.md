@@ -512,12 +512,18 @@ Service requests its scoped snapshot
         ↓
 Service validates revision, checksum and schema
         ↓
-Service stores last-known-good locally
+Service stores the verified reference snapshot locally
         ↓
-Service atomically applies the new configuration
+Service asks Kernel to resolve its keys through Volt
+        ↓
+Service keeps resolved values in memory and applies them atomically
 ```
 
-Если Kernel временно недоступен, уже настроенный сервис использует last-known-good и сообщает о degraded-состоянии. Первый запуск без валидного snapshot должен завершаться безопасным отказом.
+Register не хранит литеральные значения: каждое значение имеет вид
+`volt://<entry-id>/<field-id>`. Уже работающий сервис может пережить временную
+недоступность Kernel на значениях в памяти и сообщает о degraded-состоянии.
+Новый процесс не может разрешить reference snapshot без доступных Kernel и Volt
+и должен завершить запуск безопасным отказом.
 
 ---
 
@@ -552,7 +558,8 @@ Result, audit and rollback metadata are recorded
 Exocortex должен избегать каскадных отказов.
 
 - Kernel не участвует в каждом runtime-действии.
-- Сервисы сохраняют проверенный last-known-good config.
+- Сервисы сохраняют проверенный last-known-good reference snapshot и держат
+  разрешённые значения только в памяти.
 - Derived storage можно пересоздать.
 - Источники истины резервируются отдельно.
 - Изменения применяются атомарно.

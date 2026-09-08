@@ -1,11 +1,16 @@
 import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
   createHmac,
   randomBytes,
   scryptSync,
   timingSafeEqual,
 } from "node:crypto";
+import { validateVoltUrl } from "./volt-client.js";
 
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const STORED_SECRET_CONTEXT = "exocortex.kernel.stored-secret.v1";
 
 function encode(value) {
   return Buffer.from(value).toString("base64url");
@@ -90,31 +95,83 @@ export function verifyApiToken(value, expected) {
   return Boolean(value && expected && constantTimeTextEqual(value, expected));
 }
 
+function storedSecretKey(sessionSecret) {
+  return createHash("sha256")
+    .update(STORED_SECRET_CONTEXT)
+    .update("\0")
+    .update(String(sessionSecret))
+    .digest();
+}
+
+export function encryptStoredSecret(value, sessionSecret) {
+  const nonce = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", storedSecretKey(sessionSecret), nonce);
+  const ciphertext = Buffer.concat([cipher.update(String(value), "utf8"), cipher.final()]);
+  return ["v1", nonce.toString("base64url"), cipher.getAuthTag().toString("base64url"), ciphertext.toString("base64url")].join(".");
+}
+
+export function decryptStoredSecret(encoded, sessionSecret) {
+  if (!encoded) return "";
+  try {
+    const [version, nonceValue, tagValue, ciphertextValue] = String(encoded).split(".");
+    if (version !== "v1" || !nonceValue || !tagValue || !ciphertextValue) throw new Error("invalid stored secret");
+    const decipher = createDecipheriv("aes-256-gcm", storedSecretKey(sessionSecret), Buffer.from(nonceValue, "base64url"));
+    decipher.setAuthTag(Buffer.from(tagValue, "base64url"));
+    return Buffer.concat([decipher.update(Buffer.from(ciphertextValue, "base64url")), decipher.final()]).toString("utf8");
+  } catch {
+    throw Object.assign(new Error("Stored Volt token cannot be decrypted with the current KERNEL_SESSION_SECRET"), { status: 503, code: "VOLT_TOKEN_DECRYPTION_FAILED" });
+  }
+}
+
+export function validateVoltKernelToken(value) {
+  return typeof value === "string"
+    && value.length >= 32
+    && value.length <= 512
+    && !/(?:replace-with|change-this|example-token)/i.test(value);
+}
+
 export function validateRuntimeSecrets({
-  adminUsername,
+  accessKey,
+  legacyAdminUsername,
   adminPassword,
+  adminUsername,
   sessionSecret,
   apiToken,
+  voltUrl,
+  voltKernelToken,
 }) {
   const issues = [];
   const isPlaceholder = (value) => (
     typeof value !== "string"
     || /(?:change-this|replace-with|example-password)/i.test(value)
   );
+  const resolvedAccessKey = accessKey ?? adminPassword;
+  const resolvedLegacyUsername = legacyAdminUsername ?? adminUsername;
   if (
-    typeof adminUsername !== "string"
-    || !/^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$/.test(adminUsername)
+    resolvedLegacyUsername != null
+    && resolvedLegacyUsername !== ""
+    && !/^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$/.test(resolvedLegacyUsername)
   ) {
-    issues.push("KERNEL_ADMIN_USERNAME must contain 3-64 letters, numbers, dots, underscores or hyphens");
+    issues.push("deprecated KERNEL_ADMIN_USERNAME must contain 3-64 letters, numbers, dots, underscores or hyphens when present");
   }
-  if (typeof adminPassword !== "string" || adminPassword.length < 12 || isPlaceholder(adminPassword)) {
-    issues.push("KERNEL_ADMIN_PASSWORD must contain at least 12 non-placeholder characters");
+  if (typeof resolvedAccessKey !== "string" || resolvedAccessKey.length < 12 || isPlaceholder(resolvedAccessKey)) {
+    issues.push("KERNEL_ACCESS_KEY must contain at least 12 non-placeholder characters");
   }
   if (typeof sessionSecret !== "string" || sessionSecret.length < 32 || isPlaceholder(sessionSecret)) {
     issues.push("KERNEL_SESSION_SECRET must contain at least 32 non-placeholder characters");
   }
   if (typeof apiToken !== "string" || apiToken.length < 24 || isPlaceholder(apiToken)) {
     issues.push("KERNEL_SERVICE_TOKEN must contain at least 24 non-placeholder characters");
+  }
+  if (voltUrl) {
+    try {
+      validateVoltUrl(voltUrl);
+    } catch (error) {
+      issues.push(error.message);
+    }
+  }
+  if (voltKernelToken && !validateVoltKernelToken(voltKernelToken)) {
+    issues.push("VOLT_KERNEL_TOKEN must contain at least 32 non-placeholder characters");
   }
   if (issues.length) throw new Error(issues.join("; "));
 }

@@ -85,13 +85,14 @@ validate_install() {
     echo "Docker Compose v2 is required." >&2
     exit 3
   }
-  username=$(get_env KERNEL_ADMIN_USERNAME)
-  password=$(get_env KERNEL_ADMIN_PASSWORD)
+  access_key=$(get_env KERNEL_ACCESS_KEY)
+  if [ -z "$access_key" ]; then
+    access_key=$(get_env KERNEL_ADMIN_PASSWORD)
+  fi
   public_url=$(get_env KERNEL_URL)
   image=$(get_env KERNEL_IMAGE)
-  case "$username" in ""|CHANGE_ME|operator) echo "Set KERNEL_ADMIN_USERNAME in .env." >&2; exit 2 ;; esac
-  case "$password" in ""|CHANGE_ME|change-*) echo "Set KERNEL_ADMIN_PASSWORD in .env." >&2; exit 2 ;; esac
-  [ "${#password}" -ge 12 ] || { echo "KERNEL_ADMIN_PASSWORD must contain at least 12 characters." >&2; exit 2; }
+  case "$access_key" in ""|CHANGE_ME|change-*) echo "Set KERNEL_ACCESS_KEY in .env." >&2; exit 2 ;; esac
+  [ "${#access_key}" -ge 12 ] || { echo "KERNEL_ACCESS_KEY must contain at least 12 characters." >&2; exit 2; }
   case "$public_url" in https://*.*) ;; *) echo "KERNEL_URL must be the public HTTPS URL." >&2; exit 2 ;; esac
   case "$public_url" in *CHANGE_ME*|*.example.com*) echo "Replace the example KERNEL_URL." >&2; exit 2 ;; esac
   printf '%s' "$image" | grep -Eq '^ghcr\.io/.+@sha256:[a-f0-9]{64}$' || {
