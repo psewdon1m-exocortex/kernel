@@ -264,13 +264,13 @@ Register — не документ и не YAML-файл. Это структу�
 Примеры:
 
 ```text
-repositories.kernel.url                  → volt://<entry-id>/<field-id>
-repositories.perimetr.url                → volt://<entry-id>/<field-id>
-services.kernel.sni                      → volt://<entry-id>/<field-id>
-services.kernel.port                     → volt://<entry-id>/<field-id>
-services.perimetr.sni                    → volt://<entry-id>/<field-id>
-services.perimetr.port                   → volt://<entry-id>/<field-id>
-intervals.kernel.refresh_sec             → volt://<entry-id>/<field-id>
+repositories.kernel.url                  → volt://<entry-id>/<value-position>
+repositories.perimetr.url                → volt://<entry-id>/<value-position>
+services.kernel.sni                      → volt://<entry-id>/<value-position>
+services.kernel.port                     → volt://<entry-id>/<value-position>
+services.perimetr.sni                    → volt://<entry-id>/<value-position>
+services.perimetr.port                   → volt://<entry-id>/<value-position>
+intervals.kernel.refresh_sec             → volt://<entry-id>/<value-position>
 ```
 
 Repository URLs and client-facing Kernel/Perimetr ports are central values in
@@ -360,7 +360,7 @@ Register не хранит:
 runtime trust anchor и никогда не копируется в Register.
 
 Единственный допустимый формат любого значения Register — неавторизующая ссылка
-`volt://<entry-id>/<field-id>`. Реальное значение, открытое или секретное,
+`volt://<entry-id>/<value-position>`. Реальное значение, открытое или секретное,
 хранится в Volt.
 
 ## 11. Settings
@@ -544,7 +544,7 @@ Kernel готов, если:
     snapshot, но Kernel сам их не вызывает.
 15. Уже работающий клиент может пережить недоступность Kernel на разрешённых
     значениях в памяти; новый процесс без Kernel и Volt не запускается.
-16. Register хранит только строгие `volt://<entry-id>/<field-id>` ссылки и не
+16. Register хранит только строгие `volt://<entry-id>/<value-position>` ссылки и не
     содержит `services.kernel.service_token` или других bootstrap credentials.
 17. UI следует `../UNIFICATION_SPECIFICATION.md`.
 18. Интерфейс работает с клавиатурой и на узком viewport без overlap.

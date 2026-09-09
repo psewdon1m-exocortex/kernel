@@ -401,7 +401,7 @@ Topology Map предназначена для человека.
 Каждое значение Kernel Register ДОЛЖНО быть только ссылкой:
 
 ```text
-volt://<entry-id>/<field-id>
+volt://<entry-id>/<value-position>
 ```
 
 Фактическое значение ДОЛЖЕН запрашивать Kernel у Volt от своего имени и

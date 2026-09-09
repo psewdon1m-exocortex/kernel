@@ -520,7 +520,7 @@ Service keeps resolved values in memory and applies them atomically
 ```
 
 Register не хранит литеральные значения: каждое значение имеет вид
-`volt://<entry-id>/<field-id>`. Уже работающий сервис может пережить временную
+`volt://<entry-id>/<value-position>`. Уже работающий сервис может пережить временную
 недоступность Kernel на значениях в памяти и сообщает о degraded-состоянии.
 Новый процесс не может разрешить reference snapshot без доступных Kernel и Volt
 и должен завершить запуск безопасным отказом.

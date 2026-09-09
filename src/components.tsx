@@ -256,7 +256,7 @@ export function EntryForm({
           maxLength={2048}
           rows={4}
           value={value}
-          placeholder="volt://entry-id/field-id"
+          placeholder="volt://entry-id/value-position"
           onChange={(event) => setValue(event.target.value)}
         />
       </label>
@@ -270,7 +270,7 @@ export function EntryForm({
           onChange={(event) => setDescription(event.target.value)}
         />
       </label>
-      <p className="hint">Store only a volt://&lt;entry-id&gt;/&lt;field-id&gt; reference. Actual values remain in Volt.</p>
+      <p className="hint">Store only a volt://&lt;entry-id&gt;/&lt;value-position&gt; reference, using positions 1–5. Actual values remain in Volt.</p>
       <div className="dialog-actions">
         <button type="button" disabled={pending} onClick={onClose}>Cancel</button>
         <button type="submit" disabled={pending || !key.trim() || !value.trim()}>

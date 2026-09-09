@@ -149,7 +149,7 @@ test("operator can navigate every Kernel section", async ({ page }) => {
 
 test("Register can add, remove and restore an immutable revision", async ({ page }) => {
   const testKey = `test.endpoint.${Date.now()}`;
-  const testReference = "volt://11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222";
+  const testReference = "volt://11111111-1111-4111-8111-111111111111/1";
   await navigate(page, "Register");
   await page.getByRole("button", { name: "Add mapping" }).click();
   const entryDialog = page.getByRole("dialog", { name: "Add Register mapping" });

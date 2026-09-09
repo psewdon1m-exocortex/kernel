@@ -65,7 +65,7 @@ docker compose ps`}</pre>
       <ol>
         <li>Sign in with the Access Key from the environment.</li>
         <li>Confirm the accent color and Sidebar behavior in Settings. Black, white, success, and danger colors are fixed.</li>
-        <li>Create every actual value in Volt, copy its <code>volt://entry-id/field-id</code> reference, and assign that reference to the matching Register key.</li>
+        <li>Create every actual value in Volt, copy its <code>volt://entry-id/value-position</code> reference, and assign that reference to the matching Register key.</li>
         <li>Upload the current Overview and Constitution from the local device.</li>
         <li>Create and download a complete backup before production use.</li>
       </ol>
@@ -90,7 +90,7 @@ docker compose ps`}</pre>
     search: "register key value snapshot etag checksum revision 304 service token",
     content: (
       <>
-        <p>Register stores the names and topology of shared configuration, but every stored value is a strict <code>volt://entry-id/field-id</code> reference. The referenced value may be marked open or secret in Volt; Kernel resolves both kinds through the same broker path and never persists the resolved result.</p>
+        <p>Register stores the names and topology of shared configuration, but every stored value is a strict <code>volt://entry-id/value-position</code> reference. Positions are 1-based and follow the current value order in Volt. The referenced value may be marked open or secret in Volt; Kernel resolves both kinds through the same broker path and never persists the resolved result.</p>
         <table className="documentation-table">
           <thead><tr><th>Consumer</th><th>Request behavior</th><th>Failure behavior</th></tr></thead>
           <tbody>

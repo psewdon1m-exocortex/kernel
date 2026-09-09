@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { createVoltClient, validateVoltUrl } from "../server/volt-client.js";
 
-const REFERENCE = "volt://11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222";
+const REFERENCE = "volt://11111111-1111-4111-8111-111111111111/1";
 
 test("Volt URL permits remote HTTPS and loopback HTTP only", () => {
   assert.equal(validateVoltUrl("https://volt.exocortex.internal/"), "https://volt.exocortex.internal");

@@ -1,5 +1,9 @@
 # Exocortex Kernel
 
+## Автоматические резервные копии
+
+После обычной установки создайте в Saturn одноразовый Neptune setup code и выполните `sudo kernel-install backup`. Команда устанавливает общий агент при необходимости и полностью регистрирует этот deployment; расписание включается в Settings Kernel.
+
 ## Production installation
 
 Prepare the latest stable release without starting it:
@@ -120,7 +124,7 @@ Modified`. Ответы содержат revision и SHA-256 checksum canonical 
 никогда не публикуется через Register. С этим token сервис может читать machine
 API Kernel и передать до 20 Register keys в `POST /api/v1/register/resolve`.
 Каждое значение Register обязано быть строгой ссылкой
-`volt://<entry-id>/<field-id>`. Kernel разрешает все запрошенные ссылки в Volt
+`volt://<entry-id>/<value-position>`. Позиция начинается с `1`. Kernel разрешает все запрошенные ссылки в Volt
 от своего имени и возвращает сервису только готовое отображение ключей.
 
 Это сознательно простая модель доверенной зоны без ACL: любой сервис с
@@ -203,7 +207,7 @@ Overview и Constitution изменяются только загрузкой `o
 revision.
 
 Register запрещает любые реальные значения и любые ссылки, кроме строгого
-формата `volt://<entry-id>/<field-id>`. Все ключи конфигурации, например
+формата `volt://<entry-id>/<value-position>`. Все ключи конфигурации, например
 `services.laboratory.ai.gemini_api_key`, оператор добавляет только как ссылку
 на поле Volt. Kernel разрешает ссылку только при явном machine-запросе и не
 сохраняет plaintext в Register, snapshots, audit или backups. Единственный

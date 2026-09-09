@@ -16,6 +16,7 @@ const REGISTER_FIXTURE_VALUES = {
   "repositories.agent.url": "https://github.com/psewdon1m-exocortex/agent",
   "repositories.kernel.url": "https://github.com/psewdon1m-exocortex/kernel",
   "repositories.neptune.url": "https://github.com/psewdon1m-exocortex/neptune",
+  "repositories.gryphon.url": "https://github.com/psewdon1m-exocortex/gryphon",
   "repositories.updater.url": "https://github.com/psewdon1m-exocortex/updater",
   "services.kernel.sni": "kernel.example.com",
   "services.kernel.port": "443",
@@ -127,7 +128,7 @@ describe("Kernel API", () => {
     });
     const currentEntries = app.locals.kernel.store.listRegisterEntries();
     app.locals.kernel.store.upsertRegisterEntries(currentEntries.map((entry) => {
-      const reference = `volt://${randomUUID()}/${randomUUID()}`;
+      const reference = `volt://${randomUUID()}/1`;
       voltValues.set(reference, { value: REGISTER_FIXTURE_VALUES[entry.key] ?? `fixture:${entry.key}`, visibility: "plain" });
       return { key: entry.key, value: reference, description: entry.description };
     }), "test-fixture");
@@ -286,20 +287,20 @@ describe("Kernel API", () => {
       .post("/api/register/entries")
       .send({
         key: "perimetr.api",
-        value: "volt://11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222",
+        value: "volt://11111111-1111-4111-8111-111111111111/1",
         description: "Perimetr internal API",
       });
     assert.equal(created.status, 201);
     assert.notEqual(created.body.revision, initial.body.revision);
-    assert.equal(created.body.values["perimetr.api"], "volt://11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222");
+    assert.equal(created.body.values["perimetr.api"], "volt://11111111-1111-4111-8111-111111111111/1");
     assert.match(created.body.checksum, /^sha256:[a-f0-9]{64}$/);
 
     const entry = created.body.entries.find((item) => item.key === "perimetr.api");
     const updated = await agent
       .put(`/api/register/entries/${entry.id}`)
-      .send({ ...entry, value: "volt://33333333-3333-4333-8333-333333333333/44444444-4444-4444-8444-444444444444" });
+      .send({ ...entry, value: "volt://33333333-3333-4333-8333-333333333333/2" });
     assert.equal(updated.status, 200);
-    assert.equal(updated.body.values["perimetr.api"], "volt://33333333-3333-4333-8333-333333333333/44444444-4444-4444-8444-444444444444");
+    assert.equal(updated.body.values["perimetr.api"], "volt://33333333-3333-4333-8333-333333333333/2");
 
     const secret = await agent
       .post("/api/register/entries")
@@ -315,7 +316,7 @@ describe("Kernel API", () => {
       .post("/api/register/entries")
       .send({
         key: "service.api_token",
-        value: "volt://11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222",
+        value: "volt://11111111-1111-4111-8111-111111111111/1",
         description: "Volt field reference",
       });
     assert.equal(reference.status, 201);
@@ -360,7 +361,7 @@ describe("Kernel API", () => {
     assert.equal(operator.body.values["services.legacy.api_token"], legacyValue);
 
     const entry = operator.body.entries.find((item) => item.key === "services.legacy.api_token");
-    const voltReference = "volt://11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222";
+    const voltReference = "volt://11111111-1111-4111-8111-111111111111/1";
     const migrated = await agent
       .put(`/api/register/entries/${entry.id}`)
       .send({ ...entry, value: voltReference });
@@ -425,7 +426,7 @@ describe("Kernel API", () => {
     assert.equal(resolved.status, 200);
     assert.equal(resolved.body.value, register.body.values.services.kernel.sni);
 
-    const secretReference = "volt://11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222";
+    const secretReference = "volt://11111111-1111-4111-8111-111111111111/1";
     app.locals.kernel.store.createRegisterEntry({
       key: "services.test.api_token",
       value: secretReference,

@@ -49,7 +49,7 @@ This amendment supersedes every older example in this document that shows a
 literal value, plaintext secret, `secret://env/...`, a shared token in Register,
 or a service contacting Volt directly:
 
-- Every Kernel Register value is exactly `volt://<entry-id>/<field-id>`; literal
+- Every Kernel Register value is exactly `volt://<entry-id>/<value-position>`; the position is 1-based; literal
   values are not publishable.
 - Snapshot endpoints return that opaque reference unchanged. An authenticated
   service asks Kernel to resolve one or more Register keys through
@@ -545,7 +545,7 @@ Example response:
   "schema": "exocortex.register.value.v1",
   "revision": "register-000042",
   "key": "services.perimetr.sni",
-  "value": "volt://<entry-id>/<field-id>"
+  "value": "volt://<entry-id>/<value-position>"
 }
 ```
 

@@ -40,6 +40,11 @@
     "description": "Canonical source repository containing the independently released Neptune Linux and Windows clients"
   },
   {
+    "key": "repositories.gryphon.url",
+    "value": "",
+    "description": "Canonical source repository containing the independently released Gryphon Linux gateway"
+  },
+  {
     "key": "repositories.laboratory.url",
     "value": "",
     "description": "Canonical source repository containing Laboratory"

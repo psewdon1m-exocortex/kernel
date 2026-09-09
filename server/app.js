@@ -42,7 +42,7 @@ const MAX_VOLT_REFERENCES = 20;
 const KERNEL_BACKUP_ARCHIVE_FORMAT = "exocortex-kernel-backup-archive";
 const KERNEL_BACKUP_DATA_MEMBER = "data/kernel.json";
 const SAFE_KEY = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-const VOLT_REFERENCE = /^volt:\/\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const VOLT_REFERENCE = /^volt:\/\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/[1-5]$/i;
 const ALLOWED_COLOR = /^#[0-9a-f]{6}$/i;
 const PRESENTATION_ORDERS = {
   navigation_order: ["dashboard", "overview", "topology", "register", "constitution", "settings"],
@@ -131,7 +131,7 @@ function validateRegisterInput(body) {
     throw Object.assign(new Error("Description is too long"), { status: 400 });
   }
   if (!VOLT_REFERENCE.test(value)) {
-    throw Object.assign(new Error("Register values must use volt://<entry-id>/<field-id>"), { status: 400 });
+    throw Object.assign(new Error("Register values must use volt://<entry-id>/<value-position>"), { status: 400 });
   }
   return { key, value, description };
 }

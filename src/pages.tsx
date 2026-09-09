@@ -616,7 +616,7 @@ export function RegisterPage({ notify }: { notify: Notify }) {
           <strong>Register publication is paused</strong>
           <span>
             Replace {snapshot.value_migration.entry_count} stored {snapshot.value_migration.entry_count === 1 ? "value" : "values"} with exact
-            {" "}<code>volt://&lt;entry-id&gt;/&lt;field-id&gt;</code> references. Existing values remain visible here only for migration and are not returned to services.
+            {" "}<code>volt://&lt;entry-id&gt;/&lt;value-position&gt;</code> references. Positions start at 1. Existing values remain visible here only for migration and are not returned to services.
           </span>
         </div>
       )}
