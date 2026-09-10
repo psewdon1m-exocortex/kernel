@@ -2,7 +2,11 @@
 
 ## Автоматические резервные копии
 
-После обычной установки создайте в Saturn одноразовый Neptune setup code и выполните `sudo kernel-install backup`. Команда устанавливает общий агент при необходимости и полностью регистрирует этот deployment; расписание включается в Settings Kernel.
+После обычной установки создайте в Saturn одноразовый Neptune setup code. Если
+локальный Neptune уже установлен, но Kernel ещё не связан с ним, откройте
+Settings → Backup, нажмите **Initialize Neptune** и введите код. Команда
+`sudo kernel-install backup` устанавливает отсутствующий общий агент и остаётся
+резервным CLI-сценарием. Расписание задаётся только в Saturn → Synchronization.
 
 ## Production installation
 

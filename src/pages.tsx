@@ -25,7 +25,7 @@ import type {
   DashboardMetric,
   DocumentRevision,
   Metrics,
-  NeptuneStatus,
+  NeptuneAvailability,
   RegisterEntry,
   RegisterSnapshot,
   RevisionSummary,
@@ -1219,11 +1219,10 @@ export function SettingsPage({
   const [voltDraft, setVoltDraft] = useState({ url: "", token: "", repeat: "" });
   const [voltPending, setVoltPending] = useState(false);
   const [backupPending, setBackupPending] = useState(false);
-  const [neptune, setNeptune] = useState<NeptuneStatus>();
-  const [neptuneInterval, setNeptuneInterval] = useState(24);
+  const [neptune, setNeptune] = useState<NeptuneAvailability>();
+  const [neptuneDialogOpen, setNeptuneDialogOpen] = useState(false);
+  const [neptuneCode, setNeptuneCode] = useState("");
   const [neptunePending, setNeptunePending] = useState(false);
-  const [neptuneError, setNeptuneError] = useState("");
-  const [neptuneUpdate, setNeptuneUpdate] = useState<UpdateCheck>();
   const [inspection, setInspection] = useState<BackupInspection>();
   const backupInputRef = useRef<HTMLInputElement>(null);
   const [updaterStatus, setUpdaterStatus] = useState<UpdaterStatus>();
@@ -1269,6 +1268,23 @@ export function SettingsPage({
 
   useEffect(() => { void loadUpdaterState(); }, [loadUpdaterState]);
 
+  const loadNeptune = useCallback(() => {
+    api<NeptuneAvailability>("/api/neptune/availability").then(setNeptune).catch(() => setNeptune({ installed: false, linked: false, state: "unavailable" }));
+  }, []);
+  useEffect(loadNeptune, [loadNeptune]);
+
+  const initializeNeptune = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!/^[A-Za-z0-9_-]{32}$/.test(neptuneCode)) { notify("Enter the 32-character setup code from Saturn", "error"); return; }
+    setNeptunePending(true);
+    try {
+      await api("/api/neptune/initialize", { method: "POST", body: JSON.stringify({ enrollment_code: neptuneCode }) });
+      setNeptuneCode(""); setNeptuneDialogOpen(false);
+      notify("Neptune initialization started. Kernel may reconnect while the service is linked.", "info");
+    } catch (error) { notify((error as Error).message, "error"); }
+    finally { setNeptunePending(false); }
+  };
+
   const loadVoltConnection = useCallback(async () => {
     try {
       const connection = await api<VoltConnectionSettings>("/api/settings/volt");
@@ -1289,20 +1305,6 @@ export function SettingsPage({
       .catch(() => { if (!disposed) setRegisterReachability("unreachable"); });
     return () => { disposed = true; };
   }, []);
-
-  const loadNeptune = useCallback(async () => {
-    try {
-      const status = await api<NeptuneStatus>("/api/neptune/status");
-      setNeptune(status);
-      setNeptuneInterval(status.project.interval_hours);
-      setNeptuneError("");
-    } catch (error) {
-      setNeptune(undefined);
-      setNeptuneError((error as Error).message);
-    }
-  }, []);
-
-  useEffect(() => { void loadNeptune(); }, [loadNeptune]);
 
   useEffect(() => {
     if (!updateJob || ["COMPLETED", "ROLLED_BACK", "FAILED", "ROLLBACK_FAILED"].includes(updateJob.state)) return;
@@ -1508,50 +1510,6 @@ export function SettingsPage({
     }
   };
 
-  const saveNeptuneSchedule = async (enabled: boolean) => {
-    setNeptunePending(true);
-    try {
-      await api("/api/neptune/schedule", { method: "PUT", body: JSON.stringify({ enabled, interval_hours: neptuneInterval }) });
-      await loadNeptune();
-      notify(enabled ? "Automatic Saturn backup enabled" : "Automatic Saturn backup disabled", "info");
-    } catch (error) { notify((error as Error).message, "error"); }
-    finally { setNeptunePending(false); }
-  };
-
-  const runNeptuneBackup = async () => {
-    setNeptunePending(true);
-    try {
-      await api("/api/neptune/runs", { method: "POST" });
-      await loadNeptune();
-      notify("Neptune backup accepted", "info");
-    } catch (error) { notify((error as Error).message, "error"); }
-    finally { setNeptunePending(false); }
-  };
-
-  const checkNeptuneUpdate = async () => {
-    setNeptunePending(true);
-    try {
-      const result = await api<UpdateCheck>("/api/neptune/update/check", { method: "POST" });
-      setNeptuneUpdate(result);
-      notify(result.update_available ? `Neptune ${result.available_version} is available` : "Neptune is up to date", "info");
-    }
-    catch (error) { notify((error as Error).message, "error"); }
-    finally { setNeptunePending(false); }
-  };
-
-  const installNeptuneUpdate = async () => {
-    const version = neptuneUpdate?.available_version;
-    if (!version) return;
-    setNeptunePending(true);
-    try {
-      await api("/api/neptune/update/install", { method: "POST", body: JSON.stringify({ version }) });
-      setNeptuneUpdate(undefined);
-      await loadNeptune();
-      notify(`Neptune ${version} installed`, "info");
-    } catch (error) { notify((error as Error).message, "error"); }
-    finally { setNeptunePending(false); }
-  };
-
   const checkForUpdates = useCallback(async () => {
     setUpdatePending(true);
     setUpdateError("");
@@ -1719,24 +1677,9 @@ export function SettingsPage({
         </div>
         <div className="settings-group backup-neptune-group">
           <h3>Automatic backup to Saturn</h3>
-          <p>Neptune exports the same ZIP as the manual action and uploads it without changing its bytes.</p>
-          <div className="reachability-row backup-neptune-status" title={neptuneError || undefined}>
-            <span>Local Neptune agent:</span>
-            <strong className={neptune ? "is-reachable" : neptuneError ? "is-unreachable" : "is-checking"}>{neptune ? "Service Reachability" : neptuneError ? "Service Unavailable" : "Checking"}<i aria-hidden="true" /></strong>
-          </div>
-          <div className="backup-schedule-controls">
-            <div className="backup-schedule-fields">
-              <label className="toggle-row"><input type="checkbox" checked={neptune?.project.enabled ?? false} disabled={!neptune || neptunePending} onChange={(event) => void saveNeptuneSchedule(event.target.checked)} /><span>Enable automatic backups</span></label>
-              <label className="backup-interval-row"><span>Interval in hours:</span><input type="number" min={1} max={8760} value={neptuneInterval} disabled={!neptune || neptunePending} onChange={(event) => setNeptuneInterval(Number(event.target.value))} onBlur={() => { if (neptune) void saveNeptuneSchedule(neptune.project.enabled); }} /></label>
-            </div>
-            <button type="button" className="section-action backup-run-action" disabled={!neptune || neptunePending || neptune.active} onClick={() => void runNeptuneBackup()}>{neptune?.active ? "Backup in progress..." : "Back up to Saturn now"}</button>
-          </div>
-        </div>
-        <div className="settings-group backup-version-group">
-          <h3>Neptune version</h3>
-          <p>Current installed version: {neptune?.version ?? "unavailable"}{neptuneUpdate?.available_version ? ` · latest ${neptuneUpdate.available_version}` : ""}</p>
-          <button type="button" className="section-action" disabled={!neptune || neptunePending} onClick={() => void checkNeptuneUpdate()}>{neptunePending ? "Checking..." : "Check Neptune for updates"}</button>
-          {neptuneUpdate?.update_available ? <button type="button" className="section-action" disabled={neptunePending} onClick={() => void installNeptuneUpdate()}>{neptunePending ? "Installing..." : `Install Neptune ${neptuneUpdate.available_version}`}</button> : null}
+          <p>Schedules, remote runs and Neptune fleet status are managed only from Saturn → Synchronization. Manual Kernel snapshot download and restore remain here.</p>
+          <div className="reachability-row"><span>Local Neptune agent:</span><strong className={neptune?.linked ? "is-reachable" : "is-unreachable"}>{neptune?.linked ? "Linked to Saturn" : neptune?.installed ? "Detected · not linked" : "Not installed"}<i aria-hidden="true" /></strong></div>
+          {neptune?.installed && !neptune.linked && <button type="button" className="section-action" disabled={!updaterStatus?.available || neptunePending} onClick={() => setNeptuneDialogOpen(true)}>Initialize Neptune</button>}
         </div>
       </div>
     );
@@ -1880,6 +1823,16 @@ export function SettingsPage({
               </div>
             )}
           </div>
+        </Modal>
+      )}
+
+      {neptuneDialogOpen && (
+        <Modal title="Initialize Neptune" onClose={() => !neptunePending && setNeptuneDialogOpen(false)}>
+          <form className="form-stack" onSubmit={initializeNeptune}>
+            <p className="hint">Create a one-time Linux pipeline code in Saturn → Synchronization. The code goes directly to the local Updater and is never stored by Kernel.</p>
+            <label><span>Saturn setup code</span><input value={neptuneCode} minLength={32} maxLength={32} autoComplete="off" required onChange={(event) => setNeptuneCode(event.target.value.trim())} /></label>
+            <div className="dialog-actions"><button type="button" disabled={neptunePending} onClick={() => setNeptuneDialogOpen(false)}>Cancel</button><button type="submit" disabled={neptunePending}>{neptunePending ? "Starting..." : "Initialize"}</button></div>
+          </form>
         </Modal>
       )}
 

@@ -80,6 +80,13 @@ export interface NeptuneStatus {
   active: boolean;
 }
 
+export interface NeptuneAvailability {
+  installed: boolean;
+  linked: boolean;
+  state: "linked" | "unlinked" | "unavailable";
+  version?: string | null;
+}
+
 export interface DocumentRevision {
   revision: string;
   type: "overview" | "constitution";

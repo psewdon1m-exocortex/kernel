@@ -72,7 +72,7 @@ enable_backup() {
   port=$(get_env KERNEL_LISTEN_PORT); port=${port:-18180}
   printf '%s\n' "$enrollment_code" | updater neptune enroll --head kernel --project kernel --export-url "http://127.0.0.1:$port/api/internal/neptune/backup"
   unset enrollment_code
-  echo "Kernel automatic backup is connected. Enable its schedule in Settings."
+  echo "Kernel automatic backup is connected. Manage its schedule in Saturn Synchronization."
 }
 
 prepare() {

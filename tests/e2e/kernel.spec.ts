@@ -124,8 +124,8 @@ test("operator can navigate every Kernel section", async ({ page }) => {
   await expect(backupSection.getByRole("button", { name: "Create and download snapshot" })).toBeVisible();
   await expect(backupSection.getByRole("button", { name: "Browse local snapshot archive" })).toBeVisible();
   await expect(backupSection.getByText("Local Neptune agent:", { exact: true })).toBeVisible();
-  await expect(backupSection.getByRole("button", { name: "Back up to Saturn now" })).toBeVisible();
-  await expect(backupSection.getByRole("button", { name: "Check Neptune for updates" })).toBeVisible();
+  await expect(backupSection.getByRole("heading", { name: "Automatic backup to Saturn" })).toBeVisible();
+  await expect(backupSection.getByText(/Schedules, remote runs and Neptune fleet status are managed only from Saturn/)).toBeVisible();
   const updatesSection = page.locator("[data-settings-section='updates']");
   const updatesGeometry = await updatesSection.boundingBox();
   expect(Math.abs((updatesGeometry?.width ?? 0) - 1610)).toBeLessThanOrEqual(1);

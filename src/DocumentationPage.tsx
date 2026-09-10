@@ -141,7 +141,7 @@ docker compose ps`}</pre>
       <ul>
         <li><strong>Appearance:</strong> accent color preview plus Sidebar behavior.</li>
         <li><strong>Security:</strong> Access Key rotation and session revocation.</li>
-        <li><strong>Backup:</strong> complete archive creation, direct local-file inspection and confirmed restore, plus Neptune scheduling and Saturn upload.</li>
+        <li><strong>Backup:</strong> complete archive creation, direct local-file inspection and confirmed restore, plus local Neptune status and initialization.</li>
         <li><strong>Updates:</strong> independent Kernel Register and local Updater reachability, Kernel release discovery, and a separate Updater version check.</li>
         <li><strong>Logs:</strong> live bounded audit events, pagination, and diagnostic export.</li>
         <li><strong>Documents:</strong> local upload, revision history, and restore.</li>
@@ -157,7 +157,7 @@ docker compose ps`}</pre>
       <>
         <p>Create Backup produces a downloadable ZIP containing <code>manifest.json</code> and the persistent Kernel state as a checksummed data member. Store the archive as sensitive operational material.</p>
         <p>Browse local snapshot archive opens the native file picker directly. Kernel then stages and inspects the selected file, reporting its name, size, format, and creation time without mutating live state. Only explicit confirmation imports it. Archive bounds, allow-listed members, and SHA-256 are checked again during restore. Legacy Kernel JSON backups remain importable for migration.</p>
-        <p>The same section reports local Neptune reachability, controls the Saturn backup schedule, starts an immediate backup, and checks the installed Neptune version for updates.</p>
+        <p>Automatic schedules, explicit remote runs, agent health, and Neptune updates are managed centrally in Saturn → Synchronization. If a local Neptune agent is detected but not linked, Kernel Settings accepts a one-time Saturn setup code and hands initialization to the local Updater.</p>
       </>
     ),
   },

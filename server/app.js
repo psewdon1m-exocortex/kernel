@@ -1335,6 +1335,22 @@ export function createKernelApp(options) {
   app.get("/api/neptune/status", requireOperator, async (_req, res, next) => {
     try { res.json(await neptuneClient.status()); } catch (error) { next(error); }
   });
+  app.get("/api/neptune/availability", requireOperator, async (_req, res, next) => {
+    try { res.json(await neptuneClient.availability()); } catch (error) { next(error); }
+  });
+
+  app.post("/api/neptune/initialize", requireOperator, async (req, res, next) => {
+    try {
+      const code = String(req.body?.enrollment_code ?? "").trim();
+      if (!/^[A-Za-z0-9_-]{32}$/.test(code)) throw Object.assign(new Error("Enter a valid 32-character Saturn setup code"), { status: 400 });
+      const job = await updaterClient.initializeNeptune({
+        headId: updaterHeadId, projectId: neptuneProjectId,
+        exportUrl: `http://127.0.0.1:${String(process.env.KERNEL_LISTEN_PORT || 18180)}/api/internal/neptune/backup`, enrollmentCode: code,
+      });
+      store.audit(safeActor(req), "neptune.initialize", "neptune-linux", "success", { job_id: job.id });
+      res.status(202).json(job);
+    } catch (error) { next(error); }
+  });
 
   app.put("/api/neptune/schedule", requireOperator, async (req, res, next) => {
     try {

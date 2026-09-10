@@ -1,4 +1,5 @@
 import http from "node:http";
+import { randomUUID } from "node:crypto";
 
 function request(socketPath, controlToken, method, route, body, timeoutMs = 10_000) {
   return new Promise((resolve, reject) => {
@@ -85,6 +86,11 @@ export function createUpdaterClient(socketPath, controlToken = "") {
     },
     updateNeptune(payload) {
       return request(socketPath, controlToken, "POST", "/v1/components/neptune-linux/update", payload, 300_000);
+    },
+    initializeNeptune({ headId, projectId, exportUrl, enrollmentCode }) {
+      return request(socketPath, controlToken, "POST", "/v1/components/neptune-linux/initialize", {
+        request_id: randomUUID(), head_id: headId, project_id: projectId, export_url: exportUrl, enrollment_code: enrollmentCode,
+      }, 30_000);
     },
     job(id) {
       return request(socketPath, "", "GET", `/v1/jobs/${encodeURIComponent(id)}`);
