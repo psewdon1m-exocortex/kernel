@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.2.4
+
+- Add operator-guided recovery bootstrap and verified Updater self-update flows.
+- Centralize Neptune backup and update controls while aligning Volt service references.
+- Unify Kernel service controls and reduce unauthenticated public probing exposure.
+
 ## 0.2.3
 
 - Export operator and pre-update Kernel backups as bounded ZIP archives with a
