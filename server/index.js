@@ -1,4 +1,5 @@
 import path from "node:path";
+import { trustedProxies } from "./proxy-policy.js";
 import { fileURLToPath } from "node:url";
 import { createKernelApp } from "./app.js";
 import { validateRuntimeSecrets } from "./security.js";
@@ -28,7 +29,7 @@ const config = {
   sessionSecret: process.env.KERNEL_SESSION_SECRET,
   apiToken: process.env.KERNEL_SERVICE_TOKEN ?? process.env.KERNEL_API_TOKEN,
   cookieSecure: process.env.KERNEL_COOKIE_SECURE === "true",
-  trustProxy: process.env.KERNEL_TRUST_PROXY === "true",
+  trustProxy: trustedProxies(process.env.KERNEL_TRUSTED_PROXIES),
   diskPath: process.env.KERNEL_DISK_PATH
     || (process.platform === "win32" ? path.parse(process.cwd()).root : "/"),
   version: process.env.KERNEL_VERSION ?? "0.1.1",

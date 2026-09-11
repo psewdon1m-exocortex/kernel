@@ -84,6 +84,9 @@ export function createUpdaterClient(socketPath, controlToken = "") {
     createUpdate(payload) {
       return request(socketPath, controlToken, "POST", "/v1/updates", payload, 30_000);
     },
+    selfUpdate(headId) {
+      return request(socketPath, controlToken, "POST", "/v1/lifecycle/updater-self-update", { head_id: headId }, 30_000);
+    },
     updateNeptune(payload) {
       return request(socketPath, controlToken, "POST", "/v1/components/neptune-linux/update", payload, 300_000);
     },
@@ -92,8 +95,11 @@ export function createUpdaterClient(socketPath, controlToken = "") {
         request_id: randomUUID(), head_id: headId, project_id: projectId, export_url: exportUrl, enrollment_code: enrollmentCode,
       }, 30_000);
     },
+    neptuneInitialization(id, headId) {
+      return request(socketPath, controlToken, "GET", `/v1/components/neptune-linux/initializations/${encodeURIComponent(id)}?head_id=${encodeURIComponent(headId)}`);
+    },
     job(id) {
-      return request(socketPath, "", "GET", `/v1/jobs/${encodeURIComponent(id)}`);
+      return request(socketPath, controlToken, "GET", `/v1/jobs/${encodeURIComponent(id)}`);
     },
     rollback(id) {
       return request(socketPath, controlToken, "POST", `/v1/jobs/${encodeURIComponent(id)}/rollback`);

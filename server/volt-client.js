@@ -94,3 +94,24 @@ export function createVoltClient({
 }
 
 export { validateBaseUrl as validateVoltUrl };
+
+/** Bootstrap coordinates break the discovery cycle; operational requests use the current Register route. */
+export function createDiscoveredVoltClient({ baseUrl, token, getRouteReferences, timeoutMs, fetchImpl }) {
+  const bootstrap = createVoltClient({ baseUrl, token, timeoutMs, fetchImpl });
+  return {
+    async resolve(references) {
+      const route = getRouteReferences();
+      const reference = /^volt:\/\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/[1-5]$/i;
+      if (!reference.test(route.sni) || !reference.test(route.port))
+        throw clientError(503, "VOLT_ROUTE_NOT_CONFIGURED", "Map the Volt hostname and port in the Kernel Register");
+      const resolved = await bootstrap.resolve([...new Set([route.sni, route.port])]);
+      const host = resolved.values[route.sni].value;
+      const port = resolved.values[route.port].value;
+      if (!/^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$/.test(host) || host.length > 253 || !/^\d{1,5}$/.test(port) || Number(port) < 1 || Number(port) > 65535)
+        throw clientError(503, "VOLT_ROUTE_INVALID", "The registered Volt route is invalid");
+      const local = ["127.0.0.1", "localhost"].includes(host);
+      const scheme = local && new URL(baseUrl).protocol === "http:" ? "http:" : "https:";
+      return createVoltClient({ baseUrl: `${scheme}//${host}:${port}`, token, timeoutMs, fetchImpl }).resolve(references);
+    },
+  };
+}

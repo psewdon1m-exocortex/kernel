@@ -1,3 +1,5 @@
+import { SelfUpdateButton } from "./SelfUpdateButton.js";
+import { pendingAgentJob, waitForAgentJob, type AgentJob } from "./agent-job";
 import {
   useCallback,
   useEffect,
@@ -1271,16 +1273,29 @@ export function SettingsPage({
   const loadNeptune = useCallback(() => {
     api<NeptuneAvailability>("/api/neptune/availability").then(setNeptune).catch(() => setNeptune({ installed: false, linked: false, state: "unavailable" }));
   }, []);
-  useEffect(loadNeptune, [loadNeptune]);
+  useEffect(() => {
+    loadNeptune();
+    const pending = pendingAgentJob();
+    if (!pending) return;
+    setNeptunePending(true);
+    void waitForAgentJob(pending, id => api<AgentJob>(`/api/neptune/initializations/${encodeURIComponent(id)}`))
+      .then(() => loadNeptune()).catch(error => notify((error as Error).message, "error"))
+      .finally(() => setNeptunePending(false));
+  }, [loadNeptune, notify]);
 
   const initializeNeptune = async (event: FormEvent) => {
     event.preventDefault();
     if (!/^[A-Za-z0-9_-]{32}$/.test(neptuneCode)) { notify("Enter the 32-character setup code from Saturn", "error"); return; }
     setNeptunePending(true);
     try {
-      await api("/api/neptune/initialize", { method: "POST", body: JSON.stringify({ enrollment_code: neptuneCode }) });
-      setNeptuneCode(""); setNeptuneDialogOpen(false);
-      notify("Neptune initialization started. Kernel may reconnect while the service is linked.", "info");
+      const job = await api<AgentJob>("/api/neptune/initialize", { method: "POST", body: JSON.stringify({ enrollment_code: neptuneCode }) });
+      setNeptuneCode("");
+      await waitForAgentJob(job, id => api<AgentJob>(`/api/neptune/initializations/${encodeURIComponent(id)}`));
+      const availability = await api<NeptuneAvailability>("/api/neptune/availability");
+      setNeptune(availability);
+      if (!availability.linked) throw new Error("Neptune enrollment completed but its project health is unavailable");
+      setNeptuneDialogOpen(false);
+      notify("Neptune is linked and ready.", "success");
     } catch (error) { notify((error as Error).message, "error"); }
     finally { setNeptunePending(false); }
   };
@@ -1679,7 +1694,7 @@ export function SettingsPage({
           <h3>Automatic backup to Saturn</h3>
           <p>Schedules, remote runs and Neptune fleet status are managed only from Saturn → Synchronization. Manual Kernel snapshot download and restore remain here.</p>
           <div className="reachability-row"><span>Local Neptune agent:</span><strong className={neptune?.linked ? "is-reachable" : "is-unreachable"}>{neptune?.linked ? "Linked to Saturn" : neptune?.installed ? "Detected · not linked" : "Not installed"}<i aria-hidden="true" /></strong></div>
-          {neptune?.installed && !neptune.linked && <button type="button" className="section-action" disabled={!updaterStatus?.available || neptunePending} onClick={() => setNeptuneDialogOpen(true)}>Initialize Neptune</button>}
+          {!neptune?.linked && <button type="button" className="section-action" disabled={!updaterStatus?.available || neptunePending} onClick={() => setNeptuneDialogOpen(true)}>Initialize Neptune</button>}
         </div>
       </div>
     );
@@ -1704,10 +1719,11 @@ export function SettingsPage({
         <button type="button" className="section-action update-check-action" disabled={updatePending} onClick={openUpdates}>{updatePending ? "Checking..." : "Check for updates"}</button>
         <div className="settings-group updater-version-group">
           <h3>Updater version</h3>
+          <SelfUpdateButton enabled={updaterStatus?.available === true} start={() => api("/api/updater/self-update/install", { method: "POST" })} read={id => api(`/api/updater/jobs/${encodeURIComponent(id)}`)} />
           <p>Current installed version: {updaterStatus?.version ?? "unavailable"}{updaterUpdate?.available_version ? ` · latest ${updaterUpdate.available_version}` : ""}</p>
           <button type="button" className="section-action" disabled={!updaterStatus?.available || updaterUpdatePending} onClick={() => void checkUpdaterUpdate()}>{updaterUpdatePending ? "Checking..." : "Check Updater for updates"}</button>
           {updaterUpdateError && <p className="inline-error" role="alert">{updaterUpdateError}</p>}
-          {updaterUpdate?.update_available && <p className="hint updater-self-update-hint">Run <code>updater update --head kernel</code> on the VPS to install version {updaterUpdate.available_version} safely.</p>}
+
         </div>
       </div>
     );

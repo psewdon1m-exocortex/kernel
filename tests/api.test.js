@@ -401,13 +401,14 @@ describe("Kernel API", () => {
       .set("Authorization", `Bearer ${API_TOKEN}`);
     assert.equal(register.status, 200);
     assert.equal(register.body.schema, "exocortex.register.snapshot.v1");
-    assert.match(register.body.values.repositories.agent.url, /^volt:\/\//);
+    assert.match(register.body.values.repositories.saturn.url, /^volt:\/\//);
+    assert.equal(register.body.values.repositories.agent, undefined);
     assert.match(register.body.values.services.kernel.sni, /^volt:\/\//);
     assert.match(register.body.values.services.kernel.port, /^volt:\/\//);
     assert.equal(register.body.values.services.kernel.service_token, undefined);
     assert.match(register.body.values.services.volt.sni, /^volt:\/\//);
-    assert.match(register.body.values.services.perimetr.sni, /^volt:\/\//);
-    assert.match(register.body.values.services.perimetr.port, /^volt:\/\//);
+    assert.match(register.body.values.services.saturn.sni, /^volt:\/\//);
+    assert.match(register.body.values.services.saturn.port, /^volt:\/\//);
     assert.match(register.body.values.intervals.kernel.refresh_sec, /^volt:\/\//);
     const expectedChecksum = registerChecksum(register.body.values);
     assert.equal(register.body.checksum, expectedChecksum);
@@ -417,8 +418,8 @@ describe("Kernel API", () => {
       .get("/api/v1/register/sections/services")
       .set("Authorization", `Bearer ${API_TOKEN}`);
     assert.equal(section.status, 200);
-    assert.match(section.body.values.perimetr.sni, /^volt:\/\//);
-    assert.match(section.body.values.perimetr.port, /^volt:\/\//);
+    assert.match(section.body.values.saturn.sni, /^volt:\/\//);
+    assert.match(section.body.values.saturn.port, /^volt:\/\//);
 
     const resolved = await client
       .get("/api/v1/register/resolve?key=services.kernel.sni")
@@ -846,10 +847,12 @@ describe("Kernel API", () => {
     const restored = await agent
       .post("/api/backup/restore")
       .send({ inspection_id: inspection.body.inspection_id });
-    assert.equal(restored.status, 200);
+    assert.equal(restored.status, 200, JSON.stringify(restored.body.error));
+    assert.equal((await agent.get("/api/register")).status, 401);
+    await agent.post("/api/auth/login").send({ access_key: ADMIN_PASSWORD });
     const after = await agent.get("/api/register");
     assert.equal(after.body.values["services.kernel.port"], initialRegister.values["services.kernel.port"]);
-    assert.notEqual(after.body.revision, initialRegister.revision);
+    assert.equal(after.body.revision, initialRegister.revision);
 
     const tamperedData = strToU8(JSON.stringify({ ...backupPayload, created_at: "tampered" }));
     const tamperedArchive = zipSync({

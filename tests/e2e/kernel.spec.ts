@@ -98,7 +98,7 @@ test("operator can navigate every Kernel section", async ({ page }) => {
   await navigate(page, "Register");
   await expect(page.getByText("services.kernel.sni", { exact: true })).toBeVisible();
   await expect(page.getByText("services.kernel.port", { exact: true })).toBeVisible();
-  await expect(page.getByText("services.perimetr.port", { exact: true })).toBeVisible();
+  await expect(page.getByText("services.saturn.port", { exact: true })).toBeVisible();
 
   await navigate(page, "Settings");
   for (const name of ["Appearance", "Security", "Backup", "Updates", "Logs", "Documents"]) {
@@ -129,7 +129,7 @@ test("operator can navigate every Kernel section", async ({ page }) => {
   const updatesSection = page.locator("[data-settings-section='updates']");
   const updatesGeometry = await updatesSection.boundingBox();
   expect(Math.abs((updatesGeometry?.width ?? 0) - 1610)).toBeLessThanOrEqual(1);
-  expect(updatesGeometry?.height).toBeCloseTo(566, 0);
+  expect(updatesGeometry?.height).toBeCloseTo(606, 0);
   await expect(updatesSection.getByText("Local updater agent:", { exact: true })).toBeVisible();
   await expect(updatesSection.getByText("Kernel Register:", { exact: true })).toBeVisible();
   await expect(updatesSection.getByRole("button", { name: "Check for updates" })).toBeVisible();

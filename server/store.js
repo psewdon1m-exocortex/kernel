@@ -3,6 +3,7 @@ import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { expandDottedValues, registerChecksum } from "./machine-contract.js";
+import { exportRecoveryState, importRecoveryState } from "./recovery-state.js";
 
 function nowIso() {
   return new Date().toISOString();
@@ -682,8 +683,12 @@ export class KernelStore {
     });
   }
 
-  upsertRegisterEntries(inputs, actor) {
+  upsertRegisterEntries(inputs, actor, { replace = false } = {}) {
     return this.transaction(() => {
+      if (replace) {
+        if (!inputs.length) throw new Error("Cannot replace Register with an empty profile");
+        this.db.prepare(`DELETE FROM register_entries WHERE key NOT IN (${inputs.map(() => "?").join(",")})`).run(...inputs.map(input => input.key));
+      }
       const timestamp = nowIso();
       let nextPosition = Number(this.db.prepare(
         "SELECT COALESCE(MAX(position), -1) + 1 AS next FROM register_entries",
@@ -1037,7 +1042,8 @@ export class KernelStore {
   exportBackup() {
     return {
       format: "exocortex-kernel-backup",
-      version: 2,
+      version: 3,
+      authoritative: exportRecoveryState(this.db),
       created_at: nowIso(),
       documents: {
         overview: this.listDocumentVersions("overview", 10000).map((item) => {
@@ -1064,6 +1070,9 @@ export class KernelStore {
   }
 
   importBackup(backup, actor, registerValidator = null) {
+    if (backup?.format === "exocortex-kernel-backup" && Number(backup.version) === 3) {
+      return importRecoveryState(this, backup.authoritative, actor, registerValidator);
+    }
     if (
       !backup
       || backup.format !== "exocortex-kernel-backup"

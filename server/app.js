@@ -19,6 +19,7 @@ import {
 import { createMetricsCollector } from "./metrics.js";
 import { createServiceStatusCollector, SERVICE_STATUS_DEFINITIONS } from "./service-status.js";
 import { KernelStore } from "./store.js";
+import { inspectRegisterProfile, inspectResolvedProfile, validateProfileBindings } from "./register-profile.js";
 import {
   CONSTITUTION_MEDIA_TYPE,
   REGISTER_MEDIA_TYPE,
@@ -29,7 +30,7 @@ import {
 import { checkGitHubRelease } from "./updater.js";
 import { createUpdaterClient } from "./updater-client.js";
 import { createNeptuneClient } from "./neptune-client.js";
-import { createVoltClient, validateVoltUrl } from "./volt-client.js";
+import { createVoltClient, createDiscoveredVoltClient, validateVoltUrl } from "./volt-client.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DOCUMENT_TYPES = new Set(["overview", "constitution"]);
@@ -388,7 +389,8 @@ function requestOriginMatches(req, trustProxy) {
     // Local development and the supported production proxy both terminate the
     // browser connection before forwarding it to Kernel. Trust the public host
     // only from that trusted hop, never from an arbitrary remote client.
-    if (trustProxy || isLoopbackAddress(req.socket.remoteAddress)) {
+    const trusted = req.app.get("trust proxy fn");
+    if ((trustProxy && trusted?.(req.socket.remoteAddress, 0)) || (process.env.NODE_ENV !== "production" && isLoopbackAddress(req.socket.remoteAddress))) {
       const forwardedHost = firstForwardedHeaderValue(req.get("x-forwarded-host"));
       if (forwardedHost) expectedHosts.add(forwardedHost);
     }
@@ -460,8 +462,12 @@ export function createKernelApp(options) {
   function activeVoltClient() {
     if (voltClient) return voltClient;
     const connection = store.getVoltConnectionSettings();
-    return createVoltClient({
+    return createDiscoveredVoltClient({
       baseUrl: connection.url,
+      getRouteReferences: () => {
+        const values = store.getRegisterMachineSnapshot()?.values;
+        return { sni: nestedRegisterValue(values, "services.volt.sni"), port: nestedRegisterValue(values, "services.volt.port") };
+      },
       token: decryptStoredSecret(connection.encrypted_token, sessionSecret),
       timeoutMs: voltTimeoutMs,
       fetchImpl: voltFetch,
@@ -547,7 +553,7 @@ export function createKernelApp(options) {
   }
 
   app.disable("x-powered-by");
-  if (trustProxy) app.set("trust proxy", 1);
+  if (trustProxy) app.set("trust proxy", trustProxy === true ? "loopback" : trustProxy);
   app.use((req, res, next) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive, nosnippet");
@@ -1059,6 +1065,25 @@ export function createKernelApp(options) {
       next(error);
     }
   });
+  const deploymentProfile = JSON.parse(fs.readFileSync(path.join(defaultsDir, "register.json"), "utf8"));
+  app.get("/api/register/profile", requireOperator, (_req, res) => res.json(inspectRegisterProfile(store.listRegisterEntries(), deploymentProfile)));
+  app.post("/api/register/profile/check", requireOperator, async (_req, res, next) => {
+    try {
+      const structure = inspectRegisterProfile(store.listRegisterEntries(), deploymentProfile);
+      if (!structure.ready) return res.status(409).json(structure);
+      const resolved = inspectResolvedProfile(await resolveCurrentRegisterKeys(deploymentProfile.map(entry => entry.key)));
+      res.status(resolved.ready ? 200 : 409).json({ ...structure, ready: resolved.ready, invalid: resolved.invalid, values_resolved: true });
+    } catch (error) { next(error); }
+  });
+  app.put("/api/register/profile", requireOperator, (req, res, next) => {
+    try {
+      const inputs = validateProfileBindings(req.body?.bindings, deploymentProfile);
+      const current = inspectRegisterProfile(store.listRegisterEntries(), deploymentProfile);
+      if (current.extra.length && req.body?.prune !== true) return res.status(409).json({ error: "Register has entries outside the six-service profile; review them before pruning", profile: current });
+      store.upsertRegisterEntries(inputs, safeActor(req), { replace: req.body?.prune === true });
+      res.json(inspectRegisterProfile(store.listRegisterEntries(), deploymentProfile));
+    } catch (error) { next(error); }
+  });
 
   app.put("/api/register/entries", requireOperator, (req, res, next) => {
     try {
@@ -1363,6 +1388,12 @@ export function createKernelApp(options) {
       res.status(204).send();
     } catch (error) { next(error); }
   });
+  app.get("/api/neptune/initializations/:id", requireOperator, async (req, res, next) => {
+    try {
+      if (!/^neptune-[0-9]+-[a-f0-9]{16}$/.test(req.params.id)) throw Object.assign(new Error("Invalid initialization job"), { status: 400 });
+      res.json(await updaterClient.neptuneInitialization(req.params.id, updaterHeadId));
+    } catch (error) { next(error); }
+  });
 
   app.post("/api/neptune/runs", requireOperator, async (_req, res, next) => {
     try { res.status(202).json(await neptuneClient.run()); } catch (error) { next(error); }
@@ -1560,7 +1591,7 @@ export function createKernelApp(options) {
         if (
           !backup
           || backup.format !== "exocortex-kernel-backup"
-          || ![1, 2].includes(Number(backup.version))
+          || ![1, 2, 3].includes(Number(backup.version))
         ) {
           throw Object.assign(new Error("Unsupported Kernel backup format"), { status: 400 });
         }
@@ -1709,6 +1740,10 @@ export function createKernelApp(options) {
       });
       next(error);
     }
+  });
+
+  app.post("/api/updater/self-update/install", requireOperator, async (_req, res, next) => {
+    try { res.status(202).json(await updaterClient.selfUpdate(updaterHeadId)); } catch (error) { next(error); }
   });
 
   if (fs.existsSync(distDir)) {

@@ -2,60 +2,56 @@
   "version": 1,
   "service": "kernel",
   "exposure_modes": [
-    "public/non-indexable",
-    "private"
+    "private",
+    "concealed"
   ],
   "profiles": {
     "backup_restore": {
       "applicable": true,
       "evidence": [
-        "README.md",
-        "server/app.js",
-        "tests/api.test.js"
+        "DEPLOYMENT_READINESS.md",
+        "server/recovery-state.js",
+        "tests/recovery.test.js"
       ]
     },
     "service_update": {
       "applicable": true,
       "evidence": [
-        "README.md",
-        "WEB_SERVICE_UPDATE_ARCHITECTURE.md",
+        "DEPLOYMENT_READINESS.md",
         "server/updater.js",
-        "tests/api.test.js"
+        "src/SelfUpdateButton.tsx"
       ]
     },
     "internal_documentation": {
       "applicable": true,
       "evidence": [
-        "src/DocumentationPage.tsx",
-        "src/App.tsx",
-        "tests/e2e/kernel.spec.ts"
+        "src/DocumentationPage.tsx"
       ]
     },
     "technical_documentation": {
       "applicable": true,
       "evidence": [
         "README.md",
-        "RELEASING.md",
-        "WEB_SERVICE_UPDATE_ARCHITECTURE.md"
+        "DEPLOYMENT_READINESS.md"
       ]
     },
     "security": {
       "applicable": true,
       "evidence": [
-        "server/security.js",
-        "tests/security.test.js"
+        "server/proxy-policy.js",
+        "tests/proxy-policy.test.js"
       ]
     },
     "public_seo_geo": {
       "applicable": false,
-      "reason": "Kernel has no intentionally public/indexable content surface."
+      "reason": "This service has no deliberately public/indexable content; crawler exclusion is checked in the private/concealed profile."
     },
     "private_concealed": {
       "applicable": true,
       "evidence": [
-        "README.md",
-        "server/security.js",
-        "tests/security.test.js"
+        "DEPLOYMENT_READINESS.md",
+        "server/proxy-policy.js",
+        "tests/proxy-policy.test.js"
       ]
     }
   }

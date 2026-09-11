@@ -2,11 +2,11 @@
 
 ## Автоматические резервные копии
 
-После обычной установки создайте в Saturn одноразовый Neptune setup code. Если
-локальный Neptune уже установлен, но Kernel ещё не связан с ним, откройте
-Settings → Backup, нажмите **Initialize Neptune** и введите код. Команда
-`sudo kernel-install backup` устанавливает отсутствующий общий агент и остаётся
-резервным CLI-сценарием. Расписание задаётся только в Saturn → Synchronization.
+Updater автоматически устанавливает общий Neptune после настройки Register и
+доверия к релизам. Создайте в Saturn одноразовый Neptune setup code, откройте
+Settings → Backup, нажмите **Initialize Neptune** и введите код. Эта операция
+также установит отсутствующий агент. `sudo kernel-install backup` выполняет
+тот же сценарий через CLI. Расписание задаётся только в Saturn → Synchronization.
 
 ## Production installation
 
@@ -274,3 +274,5 @@ npm run check
 - [Release process](RELEASING.md)
 - [Open Node snapshot](vendor/open-node/VENDORED_FROM.md)
 - Общая спецификация унификации: `../UNIFICATION_SPECIFICATION.md`
+
+The current six-service deployment, trust, recovery and acceptance contract is documented in [Deployment readiness](DEPLOYMENT_READINESS.md).

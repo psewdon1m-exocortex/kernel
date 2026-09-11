@@ -23,6 +23,7 @@ COPY --from=build /app/vendor/open-node/packages vendor/open-node/packages
 COPY --from=build /app/dist dist
 COPY server server
 COPY data/defaults defaults
+COPY scripts/bootstrap-register.mjs scripts/bootstrap-register.mjs
 
 RUN mkdir -p /app/data && chown -R node:node /app
 USER node

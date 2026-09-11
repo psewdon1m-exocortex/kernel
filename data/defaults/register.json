@@ -5,31 +5,6 @@
     "description": "Canonical source repository containing Kernel"
   },
   {
-    "key": "repositories.perimetr.url",
-    "value": "",
-    "description": "Canonical source repository containing Perimetr"
-  },
-  {
-    "key": "repositories.chronos.url",
-    "value": "",
-    "description": "Canonical source repository containing Chronos"
-  },
-  {
-    "key": "repositories.agent.url",
-    "value": "",
-    "description": "Canonical source repository containing Agent Node"
-  },
-  {
-    "key": "repositories.pod.url",
-    "value": "",
-    "description": "Canonical Pod release repository; Perimetr derives the signed pod-current manifest from this URL"
-  },
-  {
-    "key": "repositories.sindri.url",
-    "value": "",
-    "description": "Canonical source repository containing Sindri"
-  },
-  {
     "key": "repositories.updater.url",
     "value": "",
     "description": "Canonical source repository containing the local VPS updater"
@@ -45,24 +20,9 @@
     "description": "Canonical source repository containing the independently released Gryphon Linux gateway"
   },
   {
-    "key": "repositories.laboratory.url",
-    "value": "",
-    "description": "Canonical source repository containing Laboratory"
-  },
-  {
     "key": "repositories.volt.url",
     "value": "",
     "description": "Canonical source repository containing Volt"
-  },
-  {
-    "key": "repositories.laboratory.content.url",
-    "value": "",
-    "description": "Canonical GitHub repository containing Laboratory article archives"
-  },
-  {
-    "key": "repositories.laboratory.content.branch",
-    "value": "",
-    "description": "Canonical branch used for Laboratory article publication and administrator writeback"
   },
   {
     "key": "services.kernel.sni",
@@ -125,66 +85,6 @@
     "description": "Device-authenticated Saturn preferences used by Neptune Windows"
   },
   {
-    "key": "services.perimetr.sni",
-    "value": "",
-    "description": "Canonical HTTPS hostname used by Agent Nodes and Pods when calling Perimetr"
-  },
-  {
-    "key": "services.perimetr.port",
-    "value": "",
-    "description": "Client-facing HTTPS port used by Agent Nodes and Pods; the private application listener remains local to the VPS"
-  },
-  {
-    "key": "services.perimetr.health.path",
-    "value": "",
-    "description": "Private Perimetr readiness path; the public edge intentionally conceals it"
-  },
-  {
-    "key": "services.perimetr.health.contract",
-    "value": "",
-    "description": "Kernel reports public edge reachability separately until a private probe is connected"
-  },
-  {
-    "key": "services.chronos.sni",
-    "value": "",
-    "description": "Canonical HTTPS hostname used to reach Chronos"
-  },
-  {
-    "key": "services.chronos.port",
-    "value": "",
-    "description": "Client-facing HTTPS port used to reach Chronos"
-  },
-  {
-    "key": "services.chronos.health.path",
-    "value": "",
-    "description": "Public dependency-aware reachability path checked by Kernel"
-  },
-  {
-    "key": "services.chronos.health.contract",
-    "value": "",
-    "description": "Chronos public reachability verifies its required database dependency"
-  },
-  {
-    "key": "services.laboratory.sni",
-    "value": "",
-    "description": "Canonical HTTPS hostname used to publish Laboratory"
-  },
-  {
-    "key": "services.laboratory.port",
-    "value": "",
-    "description": "Client-facing HTTPS port for Laboratory; the application listener remains bound locally"
-  },
-  {
-    "key": "services.laboratory.health.path",
-    "value": "",
-    "description": "Public Laboratory liveness path checked by Kernel"
-  },
-  {
-    "key": "services.laboratory.health.contract",
-    "value": "",
-    "description": "Laboratory currently exposes liveness; dependency readiness remains unknown"
-  },
-  {
     "key": "services.volt.sni",
     "value": "",
     "description": "Canonical HTTPS hostname used by Kernel for Volt health and operator topology"
@@ -205,24 +105,9 @@
     "description": "Volt currently exposes liveness; dependency readiness remains unknown"
   },
   {
-    "key": "services.laboratory.backup.saturn_slug",
-    "value": "",
-    "description": "Saturn backup producer slug used by Neptune for Laboratory archives"
-  },
-  {
-    "key": "services.perimetr.backup.saturn_slug",
-    "value": "",
-    "description": "Saturn backup producer slug used by Neptune for Perimetr archives"
-  },
-  {
     "key": "services.saturn.backup.saturn_slug",
     "value": "",
     "description": "Saturn backup producer slug used by Neptune for Saturn's own archives"
-  },
-  {
-    "key": "services.chronos.backup.saturn_slug",
-    "value": "",
-    "description": "Saturn backup producer slug used by Neptune for Chronos archives"
   },
   {
     "key": "services.volt.backup.saturn_slug",
@@ -238,5 +123,20 @@
     "key": "intervals.neptune.register_refresh_sec",
     "value": "",
     "description": "Kernel Register refresh interval used by Neptune clients"
+  },
+  {
+    "key": "repositories.saturn.url",
+    "value": "",
+    "description": "Canonical signed Saturn release repository"
+  },
+  {
+    "key": "services.gryphon.sni",
+    "value": "",
+    "description": "Canonical HTTPS hostname for the shared Gryphon webhook gateway"
+  },
+  {
+    "key": "services.gryphon.port",
+    "value": "",
+    "description": "Canonical HTTPS port for Gryphon Telegram webhook links"
   }
 ]
