@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.2.6
+
+- Publish the RSA release public key and standalone bootstrap as release assets.
+- Bootstrap and pin the first-install public key automatically from the selected
+  HTTPS release while preserving an existing host key.
+
 ## 0.2.5
 
 - Make the HTTPS login and authenticated UI/API reachable from every client IP.

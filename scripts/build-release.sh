@@ -11,7 +11,8 @@ updater_dir="${UPDATER_BUNDLE_DIR:?UPDATER_BUNDLE_DIR is required}"
 updater_version="${UPDATER_BUNDLE_VERSION:?UPDATER_BUNDLE_VERSION is required}"
 
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || exit 2
-[[ -f "$updater_dir/install.sh" && -f "$updater_dir/updater-linux-amd64" ]] || {
+[[ -f "$updater_dir/install.sh" && -f "$updater_dir/updater-linux-amd64" && \
+   -f "$updater_dir/systemd/updater.service" && -f "$updater_dir/release-trust/updater.pem" ]] || {
   echo "Verified Updater install bundle is incomplete" >&2
   exit 3
 }
@@ -33,6 +34,7 @@ sed -i \
 bundle="$root/$output/kernel-${version}-compose.tar.gz"
 tar -czf "$bundle" -C "$stage" .
 bundle_sha="$(sha256sum "$bundle" | awk '{print $1}')"
+install -m 0755 "$root/bootstrap.sh" "$root/$output/bootstrap.sh"
 cat > "$root/$output/kernel-release.json" <<EOF
 {
   "schema_version": 1,

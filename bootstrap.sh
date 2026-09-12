@@ -40,10 +40,17 @@ PY
 curl -fsSL --retry 3 --connect-timeout 10 "$manifest_url" -o "$temporary/manifest.json"
 
 trust_file="${EXOCORTEX_RELEASE_TRUST_FILE:-/etc/exocortex/release-trust/kernel.pem}"
-[ -f "$trust_file" ] || { echo "Provision the Kernel release public key before bootstrap." >&2; exit 15; }
 curl -fsSL --proto '=https' --proto-redir '=https' --max-filesize 16384 "${manifest_url}.sig.json" -o "$temporary/manifest.sig.json"
-python3 - "$temporary/manifest.json" "$temporary/manifest.sig.json" "$trust_file" <<'PYVERIFY'
-"""Bootstrap verifier: only a pre-provisioned public key establishes trust."""
+candidate_trust_file="$trust_file"
+bootstrap_trust=false
+if [ ! -f "$trust_file" ]; then
+  candidate_trust_file="$temporary/kernel.pem"
+  release_base=${manifest_url%/kernel-release.json}
+  curl -fsSL --proto '=https' --proto-redir '=https' --max-filesize 16384 "$release_base/kernel.pem" -o "$candidate_trust_file"
+  bootstrap_trust=true
+fi
+python3 - "$temporary/manifest.json" "$temporary/manifest.sig.json" "$candidate_trust_file" <<'PYVERIFY'
+"""Verify the release with an existing pinned key or its HTTPS bootstrap key."""
 import base64
 import hashlib
 import json
@@ -71,6 +78,10 @@ with tempfile.TemporaryDirectory(prefix="exocortex-signature-") as temporary:
     signature.write_bytes(base64.b64decode(signed["signature"], validate=True))
     subprocess.run(["openssl", "dgst", "-sha256", "-verify", str(trust), "-signature", str(signature), "-sigopt", "rsa_padding_mode:pss", "-sigopt", "rsa_pss_saltlen:32", str(manifest)], check=True)
 PYVERIFY
+if [ "$bootstrap_trust" = true ]; then
+  install -d -o root -g root -m 0755 "$(dirname "$trust_file")"
+  install -o root -g root -m 0644 "$candidate_trust_file" "$trust_file"
+fi
 
 fields=$(python3 - "$temporary/manifest.json" <<'PY'
 import json, re, sys

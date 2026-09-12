@@ -23,8 +23,11 @@ run:
 sudo kernel-install
 ```
 
-The bootstrap populates the release version and immutable image digest and
-generates the session, service, updater and local Kernel-to-Volt tokens. It
+On a clean host the bootstrap downloads `kernel.pem` from the selected HTTPS
+GitHub release, verifies that it signed the release manifest, and pins it in
+`/etc/exocortex/release-trust/kernel.pem`. An existing pinned key is never
+replaced automatically. The bootstrap populates the release version and immutable
+image digest and generates the session, service, updater and local Kernel-to-Volt tokens. It
 never generates the operator Access Key. Nginx, certificates, DNS and firewall policy
 are intentionally handled separately through Sindri.
 
