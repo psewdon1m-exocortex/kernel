@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.2.5
+
+- Make the HTTPS login and authenticated UI/API reachable from every client IP.
+- Keep health, updater restore, documentation and common probe targets hidden at Nginx.
+- Replace the obsolete boolean proxy setting with the explicit trusted-proxy list.
+
 ## 0.2.4
 
 - Add operator-guided recovery bootstrap and verified Updater self-update flows.

@@ -32,7 +32,9 @@ The release bundle contains an independent `nginx.security.conf`. Include it
 inside Kernel's public HTTPS `server {}` block (for example,
 `include /opt/exocortex/kernel/nginx.security.conf;`) and validate with
 `nginx -t` before reload. It hides health, updater and documentation endpoints
-and rejects probe paths before proxying them to Kernel.
+and rejects probe paths before proxying them to Kernel. The login page and
+authenticated UI/API remain reachable from every client IP; do not add an
+`allow`/`deny` source-IP ACL for the public-authenticated deployment profile.
 
 Пассивный registry-сервис для одного VPS:
 
@@ -88,9 +90,10 @@ Sindri; keep the certificate, SNI and public ports out of Kernel `.env`.
 the private listener port. The canonical proxy configuration is documented in
 the infrastructure repository's `NGINX_DEPLOYMENT.md`.
 
-Kernel should still be restricted to the intended operator and internal
-service clients by firewall, VPN, or an access layer where possible. Never
-publish the private Node listener directly.
+Keep the private Node listener on loopback and publish only the HTTPS Nginx
+virtual host. Access Key verification, secure sessions, CSRF checks and
+application rate limits protect operator data; crawler headers are not an
+authentication mechanism.
 
 The host installer requires root for updater and Compose setup. The Kernel
 application process does not: its Dockerfile switches to the
