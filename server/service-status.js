@@ -206,7 +206,7 @@ export function createServiceStatusCollector({
 
     const rawStatus = edge.state === "fail" || readiness.state === "fail"
       ? "unavailable"
-      : readiness.state === "pass" && readiness.level === "readiness"
+      : edge.state === "pass" && readiness.state === "pass"
         ? "available"
         : "degraded";
     const previous = state.get(definition.id);

@@ -14,7 +14,7 @@ function configuredRegister() {
   ]));
 }
 
-test("service collector reports only dashboard services and distinguishes readiness from liveness", async () => {
+test("service collector reports successful readiness and liveness contracts as available", async () => {
   const calls = [];
   const collector = createServiceStatusCollector({
     getRegisterValues: configuredRegister,
@@ -38,7 +38,8 @@ test("service collector reports only dashboard services and distinguishes readin
     ]);
     assert.equal(snapshot.services.find((service) => service.id === "kernel").status, "available");
     assert.equal(snapshot.services.find((service) => service.id === "saturn").status, "available");
-    assert.equal(snapshot.services.find((service) => service.id === "volt").status, "degraded");
+    assert.equal(snapshot.services.find((service) => service.id === "volt").status, "available");
+    assert.equal(snapshot.services.find((service) => service.id === "volt").checks.readiness.level, "liveness");
     assert.ok(calls.every((url) => !url.includes("neptune") && !url.includes("updater")));
     assert.ok(calls.every((url) => url.startsWith("https://")));
   } finally {
