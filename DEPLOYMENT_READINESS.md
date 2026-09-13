@@ -1,5 +1,11 @@
 # kernel deployment and recovery contract
 
+This service-local record is subordinate to the coordinated
+[Part 11 deployment profile](../.docs/PART_11_INITIAL_MULTI_SERVICE_DEPLOYMENT.md)
+and the shared-agent contracts in
+[Part 09](../.docs/PART_09_SERVICE_AGENTS_DEPLOYMENT_AND_LIFECYCLE.md) and
+[Part 10](../.docs/PART_10_SERVICE_AGENTS_UI_AND_OPERATOR_WORKFLOWS.md).
+
 The initial Register contains exactly 28 required keys for the six-service profile. Bind every value to a numeric volt://UUID/1..5 reference using scripts/bootstrap-register.mjs, then run the resolving profile check. Blank bindings fail closed. The full historical infrastructure seed is separate. Kernel authenticates callers, discovers the current Volt address through its bootstrap connection and forwards requests without storing resolved secrets. Recovery v3 retains identifiers, revisions, topology, documents, navigation and public settings; local trust credentials remain host-owned.
 
 ## Trust and operator prerequisites

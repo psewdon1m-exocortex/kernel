@@ -1,6 +1,18 @@
 # Kernel releases
 
-Kernel releases use tags in the form `kernel-vMAJOR.MINOR.PATCH`.
+This document specializes [Part 05 — CI/CD and release
+security](../.docs/PART_05_CI_RELEASES_AND_LOCAL_UPDATES.md) for this service. If
+the two documents differ, Part 05 is authoritative.
+
+Kernel releases use tags in the form `kernel-vMAJOR.MINOR.PATCH`. The version
+sequence starts at `0.0.1`. A plain tag such as `v0.0.1` invokes
+verification-only CI and must not publish or mutate a release; only the
+service-qualified `kernel-v...` namespace may invoke the release workflow.
+
+> Current implementation gap (2026-09-13): `ci.yml` does not yet listen to
+> plain `v*` tags. A separate CI change is required before a plain tag can be
+> used as verification evidence; qualified Kernel releases remain gated by the
+> protected release workflow.
 
 ## Create a release
 

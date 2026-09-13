@@ -1,5 +1,7 @@
 # EXOCORTEX CONSTITUTION
 
+This document specializes [Part 00 — system unification specification](../../../.docs/PART_00_SYSTEM_UNIFICATION_SPECIFICATION.md); that central contract remains authoritative.
+
 > **Статус документа:** главный нормативный документ системы Exocortex.  
 > **Область действия:** все сервисы, клиенты, агенты, хранилища, интеграции и будущие нейросетевые компоненты Exocortex.  
 > **Актуальность:** 26 июля 2026 года.
@@ -432,7 +434,9 @@ last-known-good МОЖЕТ содержать только ссылки; раз�
 
 - Чувствительные соединения ДОЛЖНЫ использовать защищённый транспорт.
 - Административные порты НЕ ДОЛЖНЫ публиковаться напрямую в интернет без необходимости.
-- Для Kernel СЛЕДУЕТ использовать VPN, SSH tunnel или закрытый reverse proxy.
+- Страница входа Kernel ДОЛЖНА быть доступна с любого клиентского IP через
+  единый серверный Nginx; данные ДОЛЖНЫ защищаться Access Key и ограниченной
+  сессией приложения, а не VPN, SSH tunnel или source-IP allow-list.
 - TLS verification НЕ ДОЛЖНА отключаться как постоянное решение.
 - Внутренние endpoints ДОЛЖНЫ быть явно отделены от публичных.
 

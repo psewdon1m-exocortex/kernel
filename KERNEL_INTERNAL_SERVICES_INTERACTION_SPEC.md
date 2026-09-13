@@ -1,5 +1,7 @@
 # Kernel Internal Services Interaction Specification
 
+This document specializes [Part 00 — system unification specification](../.docs/PART_00_SYSTEM_UNIFICATION_SPECIFICATION.md); that central contract remains authoritative.
+
 **Document status:** Target specification and verification checklist  
 **System:** Exocortex  
 **Component:** Kernel  

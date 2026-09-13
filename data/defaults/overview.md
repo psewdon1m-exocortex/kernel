@@ -1,5 +1,7 @@
 # EXOCORTEX
 
+This document specializes [Part 00 — system unification specification](../../../.docs/PART_00_SYSTEM_UNIFICATION_SPECIFICATION.md); that central contract remains authoritative.
+
 > **Назначение документа:** человекочитаемое описание системы Exocortex, её модулей, границ ответственности и основных сценариев взаимодействия.  
 > **Статус:** живой архитектурный документ. Он описывает целевую систему и должен обновляться вместе с её развитием.  
 > **Актуальность:** 26 июля 2026 года.

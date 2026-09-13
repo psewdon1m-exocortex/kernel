@@ -1,5 +1,7 @@
 # Web-triggered service updates
 
+This document specializes [Part 05 — CI, releases and local updates](../.docs/PART_05_CI_RELEASES_AND_LOCAL_UPDATES.md); that central contract remains authoritative.
+
 Status: implemented baseline.
 
 ## Deployment model
@@ -20,7 +22,9 @@ Kernel UI -> /run/.../updater.sock   Perimetr UI -> /run/.../updater.sock
 
 One updater may serve several heads only when those heads share a VPS. Each
 head has a separate registered profile and `UPDATER_CONTROL_TOKEN`. The profile
-points to the head's existing `.env`; updater has no service-specific `.env`.
+points to the head's existing `.env`; Updater also retains its own separate
+mode-`0600` `/etc/exocortex/updater/.env` and never absorbs a head's secrets
+into it.
 Installing another head registers it with the existing host-wide updater; it
 does not create a second daemon, socket, state directory, or systemd unit.
 

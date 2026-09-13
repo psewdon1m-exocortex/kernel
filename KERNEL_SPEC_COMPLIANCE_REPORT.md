@@ -1,7 +1,9 @@
 # Kernel internal-services specification compliance report
 
+This document specializes [Part 00 — system unification specification](../.docs/PART_00_SYSTEM_UNIFICATION_SPECIFICATION.md); that central contract remains authoritative.
+
 Date: 2026-07-27  
-Specification: `KERNEL_INTERNAL_SERVICES_INTERACTION_SPEC(1).md`
+Specification: [`KERNEL_INTERNAL_SERVICES_INTERACTION_SPEC.md`](KERNEL_INTERNAL_SERVICES_INTERACTION_SPEC.md)
 
 ## Executive conclusion
 

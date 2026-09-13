@@ -58,7 +58,8 @@ Kernel предназначен для:
 - одного VPS;
 - одного окружения;
 - развёртывания отдельным Docker-сервисом;
-- работы за закрытым сетевым контуром или reverse proxy.
+- loopback-listener за единым серверным Nginx; страница входа использует
+  профиль `public authenticated` и доступна с любого клиентского IP.
 
 Сложная ролевая модель не требуется. Достаточно одной операторской учётной
 записи и отдельного read-only токена для внутренних систем.
@@ -79,7 +80,7 @@ Constitution
 Settings
 ```
 
-Web UI следует правилам `../UNIFICATION_SPECIFICATION.md`:
+Web UI следует правилам [центральной спецификации](../.docs/PART_00_SYSTEM_UNIFICATION_SPECIFICATION.md):
 
 - истинно чёрная рабочая поверхность;
 - белые информационные линии;
@@ -254,7 +255,7 @@ topology.onode.json
 `source_revision`.
 
 Оригинальный дизайн Open Node сохраняется внутри Canvas. Оболочка страницы и
-основная навигация Kernel следуют `../UNIFICATION_SPECIFICATION.md`.
+основная навигация Kernel следуют [центральной спецификации](../.docs/PART_00_SYSTEM_UNIFICATION_SPECIFICATION.md).
 
 ## 10. Register
 
@@ -482,9 +483,10 @@ PUT  /api/settings
 GET  /api/audit
 ```
 
-Оператор входит по `username` и `password`. Оба значения задаются локально
-через `KERNEL_ADMIN_USERNAME` и `KERNEL_ADMIN_PASSWORD`; Register их не
-публикует.
+Оператор входит только по Access Key; отдельного username нет. Bootstrap
+создаёт локальную конфигурацию verifier/session secret, а исходный Access Key
+задаётся оператором в отмеченном поле отдельного mode-`0600` `.env`. Register
+не публикует ни исходный ключ, ни verifier, ни session secret.
 
 Операторская web-сессия имеет доступ ко всем административным endpoints.
 Внутренний service token имеет read-only доступ только к стабильному machine
@@ -526,7 +528,8 @@ Overview, Topology, Dashboard, Settings, backup, audit, история и мут
 Kernel готов, если:
 
 1. Запускается отдельным Docker-сервисом на одном VPS.
-2. Имеет single-operator login с username и password из локального `.env`.
+2. Имеет single-operator login только по Access Key без username; все данные
+   закрыты ограниченной cookie-сессией приложения.
 3. Dashboard показывает локальные CPU, RAM, Disk и system uptime.
 4. Overview безопасно отображает загруженный с устройства `overview.md`.
 5. Constitution безопасно отображает загруженный с устройства
@@ -546,7 +549,7 @@ Kernel готов, если:
     значениях в памяти; новый процесс без Kernel и Volt не запускается.
 16. Register хранит только строгие `volt://<entry-id>/<value-position>` ссылки и не
     содержит `services.kernel.service_token` или других bootstrap credentials.
-17. UI следует `../UNIFICATION_SPECIFICATION.md`.
+17. UI следует [центральной спецификации](../.docs/PART_00_SYSTEM_UNIFICATION_SPECIFICATION.md).
 18. Интерфейс работает с клавиатурой и на узком viewport без overlap.
 19. Мутации фиксируются в audit.
 20. Unit, API и browser tests проходят.

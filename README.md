@@ -1,5 +1,21 @@
 # Exocortex Kernel
 
+> Documentation authority: the workspace-wide [Part 00](../.docs/PART_00_SYSTEM_UNIFICATION_SPECIFICATION.md)
+> and its applicable Parts are normative. This repository documents
+> Kernel-specific details only; a conflict is corrected here and a material
+> implementation difference follows the Part 00 divergence protocol.
+
+## Required pre-push gate
+
+After native checks and before every push, complete the checks required by
+[Part 06 — Unified acceptance checklist](../.docs/PART_06_UNIFIED_ACCEPTANCE_CHECKLIST.md) and run the versioned policy in
+`.github/pre-push-gate.json` through `scripts/pre-push-gate.py`. CI repeats the
+gate on `main`. Security is always reviewed; backup/restore, updater, embedded
+Documentation and affected technical docs are reviewed when relevant. Apply
+SEO/GEO checks to intentionally public/indexable surfaces and concealment,
+crawler and probe-resistance checks to private or authenticated surfaces.
+Every area requires `PASS` evidence or a reasoned `N/A`.
+
 ## Автоматические резервные копии
 
 Updater автоматически устанавливает общий Neptune после настройки Register и
@@ -20,7 +36,11 @@ Edit only the `OPERATOR INPUT` section in `/opt/exocortex/kernel/.env`, then
 run:
 
 ```bash
+sudoedit /opt/exocortex/kernel/.env
+sudo chmod 600 /opt/exocortex/kernel/.env
 sudo kernel-install
+sudo kernel-install status
+curl -fsS http://127.0.0.1:18180/api/health
 ```
 
 Release CI derives the public key from Kernel's private signing key in GitHub
@@ -34,7 +54,7 @@ preparation is part of installation. The bootstrap populates the release
 version and immutable image digest and generates the session, service, updater
 and local Kernel-to-Volt tokens in Kernel's own mode-`0600` `.env`; it never
 generates the operator Access Key. Nginx, certificates, DNS and firewall policy
-are intentionally handled separately through Sindri.
+are intentionally handled separately by the operator at server level.
 
 After a successful Kernel install, its installer writes one-time, root-only
 credential handoffs for Volt and Saturn under
@@ -101,11 +121,12 @@ http://127.0.0.1:18180
 
 Production Compose contains no reverse proxy and publishes Kernel only on VPS
 loopback. One shared host-level Nginx owns TCP 80/443 and routes the Kernel SNI
-to `127.0.0.1:KERNEL_LISTEN_PORT`. Install and operate that Nginx through
-Sindri; keep the certificate, SNI and public ports out of Kernel `.env`.
+to `127.0.0.1:KERNEL_LISTEN_PORT`. The operator installs, validates and reloads
+that server configuration only after local Kernel health succeeds; keep the
+certificate, SNI and public ports out of Kernel `.env`.
 `services.kernel.port` is the client-facing HTTPS port (normally `443`), not
-the private listener port. The canonical proxy configuration is documented in
-the infrastructure repository's `NGINX_DEPLOYMENT.md`.
+the private listener port. The authoritative ordering and ownership rules are
+in [Part 04](../.docs/PART_04_BOOTSTRAP_AND_DEPLOYMENT.md).
 
 Keep the private Node listener on loopback and publish only the HTTPS Nginx
 virtual host. Access Key verification, secure sessions, CSRF checks and
@@ -271,11 +292,11 @@ npm run check
 ## Документы
 
 - [Концепция](kernel-concept.md)
-- [Machine interaction specification](KERNEL_INTERNAL_SERVICES_INTERACTION_SPEC(1).md)
+- [Machine interaction specification](KERNEL_INTERNAL_SERVICES_INTERACTION_SPEC.md)
 - [Compliance report](KERNEL_SPEC_COMPLIANCE_REPORT.md)
 - [Web update architecture](WEB_SERVICE_UPDATE_ARCHITECTURE.md)
 - [Release process](RELEASING.md)
 - [Open Node snapshot](vendor/open-node/VENDORED_FROM.md)
-- Общая спецификация унификации: `../UNIFICATION_SPECIFICATION.md`
+- [Центральная спецификация унификации](../.docs/PART_00_SYSTEM_UNIFICATION_SPECIFICATION.md)
 
 The current six-service deployment, trust, recovery and acceptance contract is documented in [Deployment readiness](DEPLOYMENT_READINESS.md).
