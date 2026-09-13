@@ -37,6 +37,35 @@ random_hex() {
   openssl rand -hex "$1"
 }
 
+prepare_bootstrap_credentials() {
+  public_url=$(get_env KERNEL_URL)
+  service_token=$(get_env KERNEL_SERVICE_TOKEN)
+  case "$public_url" in https://*.*) ;; *) echo "KERNEL_URL must be configured before issuing bootstrap credentials." >&2; exit 2 ;; esac
+  case "$public_url" in *CHANGE_ME*|*.example.*) echo "Replace the example KERNEL_URL before issuing bootstrap credentials." >&2; exit 2 ;; esac
+  [ "${#service_token}" -ge 24 ] || { echo "KERNEL_SERVICE_TOKEN must contain at least 24 characters." >&2; exit 2; }
+  case "$service_token" in CHANGE_ME*|change-*|replace-*) echo "Replace KERNEL_SERVICE_TOKEN before issuing bootstrap credentials." >&2; exit 2 ;; esac
+  credential_root=/etc/exocortex/bootstrap-credentials
+  install -d -o root -g root -m 0700 "$credential_root"
+  for consumer in volt saturn; do
+    target_file="$credential_root/$consumer.env"
+    if [ -e "$target_file" ]; then
+      [ -f "$target_file" ] && [ ! -L "$target_file" ] && [ "$(stat -c '%u' "$target_file" 2>/dev/null)" = 0 ] || {
+        echo "Unsafe bootstrap credential path: $target_file" >&2
+        exit 2
+      }
+    fi
+    temporary_file=$(mktemp "$credential_root/$consumer.env.XXXXXX")
+    {
+      printf 'KERNEL_URL=%s\n' "$public_url"
+      printf 'KERNEL_SERVICE_TOKEN=%s\n' "$service_token"
+    } >"$temporary_file"
+    chown root:root "$temporary_file"
+    chmod 0600 "$temporary_file"
+    mv "$temporary_file" "$target_file"
+  done
+  unset service_token
+}
+
 install_command() {
   install -d -m 0755 /usr/local/sbin
   wrapper=/usr/local/sbin/kernel-install
@@ -138,6 +167,7 @@ validate_install() {
 install_kernel() {
   require_root
   validate_install
+  prepare_bootstrap_credentials
   prepare_neptune_mounts
   cd "$INSTALL_DIR"
   "$INSTALL_DIR/updater/install.sh" kernel "$ENV_FILE" "$INSTALL_DIR/updater/updater-linux-amd64"
@@ -166,5 +196,11 @@ case "$ACTION" in
     docker compose --env-file "$ENV_FILE" -f compose.production.yaml ps
     ;;
   backup) enable_backup ;;
-  *) echo "Usage: kernel-install [install|prepare|status|backup]" >&2; exit 2 ;;
+  credentials)
+    require_root
+    [ -f "$ENV_FILE" ] || { echo "Install Kernel first." >&2; exit 2; }
+    prepare_bootstrap_credentials
+    echo "One-time Volt and Saturn bootstrap credentials are ready."
+    ;;
+  *) echo "Usage: kernel-install [install|prepare|status|backup|credentials]" >&2; exit 2 ;;
 esac

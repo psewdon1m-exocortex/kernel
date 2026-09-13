@@ -10,10 +10,10 @@ Settings → Backup, нажмите **Initialize Neptune** и введите к�
 
 ## Production installation
 
-Prepare the latest stable release without starting it:
+Prepare one explicit immutable release without starting it (replace `X.Y.Z`):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/psewdon1m-exocortex/kernel/main/bootstrap.sh | sudo sh
+curl -fsSL https://github.com/psewdon1m-exocortex/kernel/releases/download/kernel-vX.Y.Z/bootstrap.sh | sudo sh
 ```
 
 Edit only the `OPERATOR INPUT` section in `/opt/exocortex/kernel/.env`, then
@@ -23,13 +23,25 @@ run:
 sudo kernel-install
 ```
 
-On a clean host the bootstrap downloads `kernel.pem` from the selected HTTPS
-GitHub release, verifies that it signed the release manifest, and pins it in
-`/etc/exocortex/release-trust/kernel.pem`. An existing pinned key is never
-replaced automatically. The bootstrap populates the release version and immutable
-image digest and generates the session, service, updater and local Kernel-to-Volt tokens. It
-never generates the operator Access Key. Nginx, certificates, DNS and firewall policy
+Release CI derives the public key from Kernel's private signing key in GitHub
+Secrets and embeds only that public key in this versioned `bootstrap.sh`. On a
+clean host the bootstrap writes it to
+`/etc/exocortex/release-trust/kernel.pem`, verifies the signed manifest before
+trusting any artifact URL or digest, and only then downloads and prepares
+Kernel. An existing mismatching key is never replaced automatically. No
+`scp`, manually supplied release-key fingerprint or separate public-key
+preparation is part of installation. The bootstrap populates the release
+version and immutable image digest and generates the session, service, updater
+and local Kernel-to-Volt tokens in Kernel's own mode-`0600` `.env`; it never
+generates the operator Access Key. Nginx, certificates, DNS and firewall policy
 are intentionally handled separately through Sindri.
+
+After a successful Kernel install, its installer writes one-time, root-only
+credential handoffs for Volt and Saturn under
+`/etc/exocortex/bootstrap-credentials/`. Each consuming bootstrap imports and
+deletes only its own file; it never opens Kernel's `.env`. On an already
+installed Kernel, regenerate both handoffs with `sudo kernel-install
+credentials` before bootstrapping the consumers.
 
 The release bundle contains an independent `nginx.security.conf`. Include it
 inside Kernel's public HTTPS `server {}` block (for example,
@@ -37,7 +49,9 @@ inside Kernel's public HTTPS `server {}` block (for example,
 `nginx -t` before reload. It hides health, updater and documentation endpoints
 and rejects probe paths before proxying them to Kernel. The login page and
 authenticated UI/API remain reachable from every client IP; do not add an
-`allow`/`deny` source-IP ACL for the public-authenticated deployment profile.
+`OPERATOR_CIDR`, a VPN prerequisite or an `allow`/`deny` source-IP ACL for the
+public-authenticated deployment profile. Access Key verification and the
+bounded Kernel session protect every operator data/API route.
 
 Пассивный registry-сервис для одного VPS:
 

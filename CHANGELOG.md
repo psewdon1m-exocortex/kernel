@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.2.7
+
+- Embed exact-version RSA release trust in the published bootstrap instead of
+  downloading a public key beside the manifest.
+- Issue one-time root-only bootstrap credential handoffs for Volt and Saturn;
+  consuming installers no longer read Kernel's environment file.
+- Bundle Updater 0.4.3 with fail-closed release-trust preservation.
+
 ## 0.2.6
 
 - Publish the RSA release public key and standalone bootstrap as release assets.

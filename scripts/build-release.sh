@@ -12,7 +12,8 @@ updater_version="${UPDATER_BUNDLE_VERSION:?UPDATER_BUNDLE_VERSION is required}"
 
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || exit 2
 [[ -f "$updater_dir/install.sh" && -f "$updater_dir/updater-linux-amd64" && \
-   -f "$updater_dir/systemd/updater.service" && -f "$updater_dir/release-trust/updater.pem" ]] || {
+   -f "$updater_dir/systemd/updater.service" && -f "$updater_dir/release-trust/updater.pem" && \
+   -f "$updater_dir/release-trust/neptune.pem" && -f "$updater_dir/release-trust/gryphon.pem" ]] || {
   echo "Verified Updater install bundle is incomplete" >&2
   exit 3
 }
@@ -21,11 +22,11 @@ mkdir -p "$root/$output"
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 cp "$root/compose.yaml" "$root/compose.production.yaml" "$root/compose.updater.yaml" \
-  "$root/.env.example" "$root/install.sh" "$root/bootstrap.sh" \
+  "$root/.env.example" "$root/install.sh" \
   "$root/nginx.security.conf" "$stage/"
 cp -R "$updater_dir" "$stage/updater"
 find "$stage/updater" -type f -name '*.sh' -exec chmod 0755 {} +
-chmod 0755 "$stage/install.sh" "$stage/bootstrap.sh" "$stage/updater/updater-linux-amd64"
+chmod 0755 "$stage/install.sh" "$stage/updater/updater-linux-amd64"
 sed -i \
   -e "s|^KERNEL_VERSION=.*|KERNEL_VERSION=$version|" \
   -e "s|^KERNEL_IMAGE=.*|KERNEL_IMAGE=${image_reference}@${image_digest}|" \
@@ -34,7 +35,6 @@ sed -i \
 bundle="$root/$output/kernel-${version}-compose.tar.gz"
 tar -czf "$bundle" -C "$stage" .
 bundle_sha="$(sha256sum "$bundle" | awk '{print $1}')"
-install -m 0755 "$root/bootstrap.sh" "$root/$output/bootstrap.sh"
 cat > "$root/$output/kernel-release.json" <<EOF
 {
   "schema_version": 1,

@@ -3,9 +3,11 @@ set -eu
 
 REPOSITORY="psewdon1m-exocortex/kernel"
 INSTALL_DIR="${KERNEL_INSTALL_DIR:-/opt/exocortex/kernel}"
-API_URL="https://api.github.com/repos/$REPOSITORY/releases?per_page=100"
+KERNEL_BOOTSTRAP_RELEASE_VERSION="__KERNEL_BOOTSTRAP_RELEASE_VERSION__"
+KERNEL_BOOTSTRAP_PUBLIC_KEY_B64="__KERNEL_BOOTSTRAP_PUBLIC_KEY_BASE64__"
 
 [ "$(id -u)" -eq 0 ] || { echo "Run the Kernel bootstrap as root." >&2; exit 4; }
+printf '%s' "$KERNEL_BOOTSTRAP_RELEASE_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "Invalid embedded Kernel release version." >&2; exit 4; }
 [ ! -f "$INSTALL_DIR/.env" ] || {
   echo "Kernel is already prepared at $INSTALL_DIR. Use the Settings updater for an existing installation." >&2
   exit 5
@@ -15,42 +17,22 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl openssl p
 
 temporary=$(mktemp -d)
 trap 'rm -rf "$temporary"' EXIT INT TERM
-curl -fsSL --retry 3 --connect-timeout 10 "$API_URL" -o "$temporary/releases.json"
-
-manifest_url=$(python3 - "$temporary/releases.json" <<'PY'
-import json, re, sys
-with open(sys.argv[1], encoding="utf-8") as handle:
-    releases = json.load(handle)
-candidates = []
-for release in releases:
-    match = re.fullmatch(r"kernel-v(\d+)\.(\d+)\.(\d+)", str(release.get("tag_name") or ""))
-    if match and not release.get("draft") and not release.get("prerelease"):
-        candidates.append((tuple(map(int, match.groups())), release))
-if not candidates:
-    raise SystemExit("No stable kernel-v* release is available.")
-release = max(candidates, key=lambda item: item[0])[1]
-for asset in release.get("assets") or []:
-    if asset.get("name") == "kernel-release.json":
-        print(asset["browser_download_url"])
-        break
-else:
-    raise SystemExit("The selected Kernel release has no manifest.")
-PY
-)
+release_base="https://github.com/$REPOSITORY/releases/download/kernel-v$KERNEL_BOOTSTRAP_RELEASE_VERSION"
+manifest_url="$release_base/kernel-release.json"
 curl -fsSL --retry 3 --connect-timeout 10 "$manifest_url" -o "$temporary/manifest.json"
 
 trust_file="${EXOCORTEX_RELEASE_TRUST_FILE:-/etc/exocortex/release-trust/kernel.pem}"
 curl -fsSL --proto '=https' --proto-redir '=https' --max-filesize 16384 "${manifest_url}.sig.json" -o "$temporary/manifest.sig.json"
-candidate_trust_file="$trust_file"
-bootstrap_trust=false
-if [ ! -f "$trust_file" ]; then
-  candidate_trust_file="$temporary/kernel.pem"
-  release_base=${manifest_url%/kernel-release.json}
-  curl -fsSL --proto '=https' --proto-redir '=https' --max-filesize 16384 "$release_base/kernel.pem" -o "$candidate_trust_file"
-  bootstrap_trust=true
+printf '%s' "$KERNEL_BOOTSTRAP_PUBLIC_KEY_B64" | openssl base64 -d -A >"$temporary/kernel.pem"
+openssl pkey -pubin -in "$temporary/kernel.pem" -noout >/dev/null 2>&1 || { echo "Embedded Kernel release key is invalid." >&2; exit 4; }
+if [ -e "$trust_file" ]; then
+  if [ ! -f "$trust_file" ] || [ -L "$trust_file" ] || ! cmp -s "$temporary/kernel.pem" "$trust_file"; then
+    echo "Installed Kernel release key differs from this release." >&2
+    exit 4
+  fi
 fi
-python3 - "$temporary/manifest.json" "$temporary/manifest.sig.json" "$candidate_trust_file" <<'PYVERIFY'
-"""Verify the release with an existing pinned key or its HTTPS bootstrap key."""
+python3 - "$temporary/manifest.json" "$temporary/manifest.sig.json" "$temporary/kernel.pem" "$KERNEL_BOOTSTRAP_RELEASE_VERSION" <<'PYVERIFY'
+"""Verify the exact release with the public key embedded in this bootstrap."""
 import base64
 import hashlib
 import json
@@ -60,7 +42,8 @@ import subprocess
 import sys
 import tempfile
 
-manifest, envelope, trust = map(Path, sys.argv[1:])
+manifest, envelope, trust = map(Path, sys.argv[1:4])
+expected_version = sys.argv[4]
 if manifest.stat().st_size > 2 * 1024 * 1024 or envelope.stat().st_size > 16384 or trust.stat().st_size > 16384:
     raise SystemExit("Release signature input exceeds limit")
 signed = json.loads(envelope.read_text(encoding="utf8"))
@@ -77,11 +60,12 @@ with tempfile.TemporaryDirectory(prefix="exocortex-signature-") as temporary:
     signature = Path(temporary) / "signature.bin"
     signature.write_bytes(base64.b64decode(signed["signature"], validate=True))
     subprocess.run(["openssl", "dgst", "-sha256", "-verify", str(trust), "-signature", str(signature), "-sigopt", "rsa_padding_mode:pss", "-sigopt", "rsa_pss_saltlen:32", str(manifest)], check=True)
+data = json.loads(manifest.read_text(encoding="utf8"))
+if data.get("service") != "kernel" or data.get("version") != expected_version:
+    raise SystemExit("Kernel release identity mismatch")
 PYVERIFY
-if [ "$bootstrap_trust" = true ]; then
-  install -d -o root -g root -m 0755 "$(dirname "$trust_file")"
-  install -o root -g root -m 0644 "$candidate_trust_file" "$trust_file"
-fi
+install -d -o root -g root -m 0755 "$(dirname "$trust_file")"
+[ -f "$trust_file" ] || install -o root -g root -m 0644 "$temporary/kernel.pem" "$trust_file"
 
 fields=$(python3 - "$temporary/manifest.json" <<'PY'
 import json, re, sys
@@ -113,6 +97,7 @@ print(reference + "@" + digest)
 PY
 )
 version=$(printf '%s\n' "$fields" | sed -n '1p')
+[ "$version" = "$KERNEL_BOOTSTRAP_RELEASE_VERSION" ] || { echo "Kernel release identity mismatch." >&2; exit 4; }
 bundle_url=$(printf '%s\n' "$fields" | sed -n '2p')
 bundle_sha=$(printf '%s\n' "$fields" | sed -n '3p')
 image=$(printf '%s\n' "$fields" | sed -n '4p')

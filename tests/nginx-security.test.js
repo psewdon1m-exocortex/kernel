@@ -17,12 +17,27 @@ test("public-authenticated Nginx policy has no client IP allow-list", () => {
 
 test("signed release bundle contains the Nginx policy", () => {
   assert.match(releaseBuilder, /"\$root\/nginx\.security\.conf" "\$stage\/"/);
+  for (const service of ["updater", "neptune", "gryphon"]) {
+    assert.match(releaseBuilder, new RegExp(`release-trust/${service}\\.pem`));
+  }
 });
 
-test("clean-host bootstrap provisions only the public release key", () => {
-  assert.match(bootstrap, /release_base\/kernel\.pem/);
-  assert.match(bootstrap, /bootstrap_trust=true/);
-  assert.match(bootstrap, /install -o root -g root -m 0644 "\$candidate_trust_file" "\$trust_file"/);
-  assert.match(releaseBuilder, /output\/bootstrap\.sh/);
+test("Kernel issues consumer credentials without exposing its environment", () => {
+  const installer = fs.readFileSync(new URL("../install.sh", import.meta.url), "utf8");
+  assert.match(installer, /credential_root=\/etc\/exocortex\/bootstrap-credentials/);
+  assert.match(installer, /target_file="\$credential_root\/\$consumer\.env"/);
+  assert.match(installer, /chown root:root "\$temporary_file"/);
+  assert.match(installer, /chmod 0600 "\$temporary_file"/);
+  assert.match(installer, /Replace the example KERNEL_URL before issuing bootstrap credentials/);
+});
+
+test("clean-host bootstrap uses exact embedded public release trust", () => {
+  assert.match(bootstrap, /KERNEL_BOOTSTRAP_RELEASE_VERSION="__KERNEL_BOOTSTRAP_RELEASE_VERSION__"/);
+  assert.match(bootstrap, /KERNEL_BOOTSTRAP_PUBLIC_KEY_B64="__KERNEL_BOOTSTRAP_PUBLIC_KEY_BASE64__"/);
+  assert.doesNotMatch(bootstrap, /release_base\/kernel\.pem/);
+  assert.doesNotMatch(bootstrap, /api\.github\.com\/repos/);
+  assert.match(bootstrap, /Installed Kernel release key differs from this release/);
+  assert.doesNotMatch(releaseBuilder, /output\/bootstrap\.sh/);
   assert.match(releaseWorkflow, /--export-public-key release-artifacts\/kernel\.pem/);
+  assert.match(releaseWorkflow, /build-bootstrap\.mjs/);
 });
