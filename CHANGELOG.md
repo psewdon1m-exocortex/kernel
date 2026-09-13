@@ -4,6 +4,13 @@ This document specializes [Part 00 — system unification specification](https:/
 
 ## Unreleased
 
+## 0.2.10
+
+- Align service-local contracts with the central specifications and use
+  standalone links to the canonical documentation repository.
+- Rename the internal-services interaction specification to its canonical
+  filename.
+
 ## 0.2.8
 
 - Include public brand assets in the production image.
