@@ -190,8 +190,7 @@ export class KernelStore {
     ]));
     putSetting.run("dashboard_order", JSON.stringify([
       "cpu", "ram", "disk", "uptime",
-      "service-kernel", "service-chronos", "service-perimetr",
-      "service-saturn", "service-laboratory", "service-volt",
+      "service-kernel", "service-saturn", "service-volt",
     ]));
     putSetting.run("settings_order", JSON.stringify([
       "appearance", "security", "backup", "updates", "logs", "documents",
@@ -332,10 +331,7 @@ export class KernelStore {
     const migrationKey = "migration.register.service-monitoring.v1";
     if (this.getSetting(migrationKey) === "complete") return;
     const requiredKeys = new Set([
-      "repositories.chronos.url",
-      "services.chronos.sni",
-      "services.chronos.port",
-      ...["kernel", "chronos", "perimetr", "saturn", "laboratory", "volt"].flatMap((service) => [
+      ...["kernel", "saturn", "volt"].flatMap((service) => [
         `services.${service}.health.path`,
         `services.${service}.health.contract`,
       ]),
@@ -435,8 +431,7 @@ export class KernelStore {
         ]),
         dashboard_order: readOrder("dashboard_order", [
           "cpu", "ram", "disk", "uptime",
-          "service-kernel", "service-chronos", "service-perimetr",
-          "service-saturn", "service-laboratory", "service-volt",
+          "service-kernel", "service-saturn", "service-volt",
         ], true),
         settings_order: readOrder("settings_order", [
           "appearance", "security", "backup", "updates", "logs", "documents",

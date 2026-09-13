@@ -164,64 +164,47 @@ Volt хранит только SHA-256 verifier. Токен никогда не 
 
 ```text
 repositories.kernel.url
-repositories.perimetr.url
-repositories.agent.url
-repositories.pod.url
-repositories.sindri.url
 repositories.updater.url
+repositories.neptune.url
+repositories.gryphon.url
 repositories.volt.url
+repositories.saturn.url
 services.kernel.sni
 services.kernel.port
 services.kernel.health.path
 services.kernel.health.contract
-services.chronos.sni
-services.chronos.port
-services.chronos.health.path
-services.chronos.health.contract
-services.perimetr.sni
-services.perimetr.port
-services.perimetr.health.path
-services.perimetr.health.contract
+services.kernel.backup.saturn_slug
 services.saturn.sni
 services.saturn.port
 services.saturn.health.path
 services.saturn.health.contract
-services.laboratory.sni
-services.laboratory.port
-services.laboratory.health.path
-services.laboratory.health.contract
+services.saturn.paths.backup_ingest
+services.saturn.paths.sync
+services.saturn.paths.sync_preferences
+services.saturn.backup.saturn_slug
 services.volt.sni
 services.volt.port
 services.volt.health.path
 services.volt.health.contract
+services.volt.backup.saturn_slug
 intervals.kernel.refresh_sec
+intervals.neptune.register_refresh_sec
+services.gryphon.sni
+services.gryphon.port
 ```
 
-`repositories.pod.url` — единственная общая координата релизов Pod. Perimetr
-выводит из неё `<repository>/releases/download/pod-current/pod-update.json`,
-проверяет подписанный манифест и хранит persistent last-known-good cache
-исполняемых файлов. Pods не обращаются к Kernel: проверенные URL манифеста и
-публичный ключ Perimetr встраивает в конфигурацию Subject.
+Поля `services.*.port` описывают клиентскую HTTPS-маршрутизацию, а не управляют
+локальными listener. Их меняют в конфигурации конкретного сервиса и общего
+server Nginx.
 
-Репозитории Agent и Sindri остаются в Register как общая
-provenance/operator-информация, но сами Agent и Sindri их оттуда не читают.
-Их self-update использует repository coordinates из собственного release
-manifest.
-
-`services.kernel.port` и `services.perimetr.port` — маршрутизация для клиентов,
-а не управление listener. Сам listener меняется вручную через
-`KERNEL_LISTEN_PORT`/`PERIMETR_LISTEN_PORT` с перезапуском контейнера.
-
-Backend Dashboard проверяет только известные сервисы из этого списка. Публичный
-SNI используется для отдельной EDGE-проверки, а `health.path` — для разрешённого
-health-контракта. Проверки выполняются с ограниченным timeout, без redirects и
-не превращают произвольные Register URL в сетевые probes. Neptune и Updater в
-Dashboard не проверяются.
-
-Perimetr делает conditional GET с периодом `intervals.kernel.refresh_sec`,
-проверяет schema/revision/checksum и атомарно сохраняет reference snapshot.
-Перед применением он разрешает свои ключи через Kernel; фактические значения на
-диск не записываются.
+Backend Dashboard проверяет Kernel, Saturn и Volt. Публичный SNI используется
+для отдельной EDGE-проверки, а `health.path` — только для заранее разрешённого
+health-контракта. Saturn публикует краткий dependency-aware результат по
+`/api/v1/public/reachability`, не раскрывая детали зависимостей. Проверки имеют
+ограниченный timeout, запрещают redirects и не превращают произвольные Register
+URL в сетевые probes. Updater и Neptune не являются HTTP-сервисами, а публичная
+поверхность Gryphon принимает только аутентифицированные Telegram webhooks,
+поэтому эти компоненты в Dashboard не проверяются.
 
 ## Данные и документы
 
@@ -232,7 +215,7 @@ revision.
 
 Register запрещает любые реальные значения и любые ссылки, кроме строгого
 формата `volt://<entry-id>/<value-position>`. Все ключи конфигурации, например
-`services.laboratory.ai.gemini_api_key`, оператор добавляет только как ссылку
+`services.saturn.sni`, оператор добавляет только как ссылку
 на поле Volt. Kernel разрешает ссылку только при явном machine-запросе и не
 сохраняет plaintext в Register, snapshots, audit или backups. Единственный
 machine token Volt хранится как одинаковый локальный secret file на серверах
@@ -243,7 +226,7 @@ API отвечает `REGISTER_VALUE_MIGRATION_REQUIRED`. После замен�
 значений на Volt-ссылки старые value-bearing revisions очищаются и публикация
 возобновляется.
 
-## Обновления Kernel и Perimetr
+## Обновления Kernel
 
 Production-обновление не должно клонировать и собирать весь репозиторий на VPS.
 Используется отдельный host-level updater, checksummed release manifest,

@@ -35,7 +35,7 @@ export interface UiSettings {
 }
 
 export type DashboardMetric = "cpu" | "ram" | "disk" | "uptime";
-export type ServiceId = "kernel" | "chronos" | "perimetr" | "saturn" | "laboratory" | "volt";
+export type ServiceId = "kernel" | "saturn" | "volt";
 export type ServiceDashboardCard = `service-${ServiceId}`;
 export type DashboardCardId = DashboardMetric | ServiceDashboardCard;
 export type SettingsSection = "appearance" | "security" | "backup" | "updates" | "logs" | "documents";

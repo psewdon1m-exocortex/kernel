@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.2.8
+
+- Include public brand assets in the production image.
+- Align Dashboard service monitoring with the deployed Kernel, Saturn and Volt
+  endpoints.
+- Use Saturn's redacted public readiness contract instead of its private health
+  endpoint.
+
 ## 0.2.7
 
 - Embed exact-version RSA release trust in the published bootstrap instead of

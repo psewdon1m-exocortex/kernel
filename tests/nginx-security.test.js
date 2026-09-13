@@ -6,6 +6,7 @@ const config = fs.readFileSync(new URL("../nginx.security.conf", import.meta.url
 const releaseBuilder = fs.readFileSync(new URL("../scripts/build-release.sh", import.meta.url), "utf8");
 const bootstrap = fs.readFileSync(new URL("../bootstrap.sh", import.meta.url), "utf8");
 const releaseWorkflow = fs.readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8");
+const dockerfile = fs.readFileSync(new URL("../Dockerfile", import.meta.url), "utf8");
 
 test("public-authenticated Nginx policy has no client IP allow-list", () => {
   assert.doesNotMatch(config, /^\s*(?:allow|deny)\s+/m);
@@ -20,6 +21,10 @@ test("signed release bundle contains the Nginx policy", () => {
   for (const service of ["updater", "neptune", "gryphon"]) {
     assert.match(releaseBuilder, new RegExp(`release-trust/${service}\\.pem`));
   }
+});
+
+test("production image includes public UI assets", () => {
+  assert.match(dockerfile, /^COPY public public$/m);
 });
 
 test("Kernel issues consumer credentials without exposing its environment", () => {

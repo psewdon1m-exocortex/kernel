@@ -28,13 +28,16 @@ test("operator can navigate every Kernel section", async ({ page }) => {
   await expect(page.getByText("PASSIVE REGISTRY · ONE VPS", { exact: true })).toHaveCount(0);
   await expect(page.getByText("EXOCORTEX / VPS", { exact: true })).toHaveCount(0);
   await expect(page.locator(".system-line .status-indicator")).toHaveCount(0);
-  await expect(page.locator("[data-dashboard-node]")).toHaveCount(10);
+  await expect(page.locator("[data-dashboard-node]")).toHaveCount(7);
   await expect(page.getByLabel("CPU Usage telemetry")).toBeVisible();
   await expect(page.getByLabel("RAM Usage telemetry")).toBeVisible();
   await expect(page.getByLabel("Disk Usage telemetry")).toBeVisible();
   await expect(page.getByLabel("Uptime telemetry")).toBeVisible();
-  for (const service of ["KERNEL", "Chronos", "Perimetr", "Saturn", "Laboratory", "Volt"]) {
+  for (const service of ["KERNEL", "Saturn", "Volt"]) {
     await expect(page.getByLabel(new RegExp(`^${service} availability:`))).toBeVisible();
+  }
+  for (const service of ["chronos", "perimetr", "laboratory"]) {
+    await expect(page.locator(`[data-service-id='${service}']`)).toHaveCount(0);
   }
   await expect(page.locator("[data-service-id='neptune']")).toHaveCount(0);
   await expect(page.locator("[data-service-id='updater']")).toHaveCount(0);
@@ -79,7 +82,7 @@ test("operator can navigate every Kernel section", async ({ page }) => {
     const rect = node.getBoundingClientRect();
     return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
   }));
-  expect(serviceCards).toHaveLength(6);
+  expect(serviceCards).toHaveLength(3);
   expect(Math.abs(serviceCards[0].x - 280)).toBeLessThanOrEqual(1);
   expect(Math.abs(serviceCards[0].width - 790)).toBeLessThanOrEqual(1);
   expect(serviceCards[0]).toMatchObject({ y: 543, height: 166 });

@@ -244,7 +244,7 @@ describe("Kernel API", () => {
     const services = await agent.get("/api/service-statuses");
     assert.equal(services.status, 200);
     assert.deepEqual(services.body.services.map((service) => service.id), [
-      "kernel", "chronos", "perimetr", "saturn", "laboratory", "volt",
+      "kernel", "saturn", "volt",
     ]);
     assert.ok(services.body.services.every((service) => service.status === "unconfigured"));
   });

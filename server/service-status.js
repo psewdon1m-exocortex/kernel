@@ -5,10 +5,7 @@ const MAX_RESPONSE_BYTES = 16 * 1024;
 
 export const SERVICE_STATUS_DEFINITIONS = [
   { id: "kernel", name: "KERNEL", healthPath: "/api/v1/health", contract: "private-readiness", localReady: true },
-  { id: "chronos", name: "Chronos", healthPath: "/api/public/reachability", contract: "public-readiness" },
-  { id: "perimetr", name: "Perimetr", healthPath: "/v1/health", contract: "private-readiness" },
-  { id: "saturn", name: "Saturn", healthPath: "/health/ready", contract: "public-readiness" },
-  { id: "laboratory", name: "Laboratory", healthPath: "/api/health", contract: "public-liveness" },
+  { id: "saturn", name: "Saturn", healthPath: "/api/v1/public/reachability", contract: "public-readiness" },
   { id: "volt", name: "Volt", healthPath: "/api/v1/health", contract: "public-liveness" },
 ];
 

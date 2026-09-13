@@ -22,11 +22,8 @@ test("service collector reports only dashboard services and distinguishes readin
     fetchImpl: async (input) => {
       const url = new URL(input);
       calls.push(url.href);
-      if (url.pathname === "/api/public/reachability") {
-        return Response.json({ status: "available" });
-      }
-      if (url.pathname === "/health/ready") {
-        return Response.json({ status: "ok", checks: { database: { state: "pass" } } });
+      if (url.pathname === "/api/v1/public/reachability") {
+        return Response.json({ status: "ready" });
       }
       if (["/api/health", "/api/v1/health"].includes(url.pathname)) {
         return Response.json({ status: "ok" });
@@ -37,14 +34,10 @@ test("service collector reports only dashboard services and distinguishes readin
   try {
     const snapshot = await collector.snapshot();
     assert.deepEqual(snapshot.services.map((service) => service.id), [
-      "kernel", "chronos", "perimetr", "saturn", "laboratory", "volt",
+      "kernel", "saturn", "volt",
     ]);
     assert.equal(snapshot.services.find((service) => service.id === "kernel").status, "available");
-    assert.equal(snapshot.services.find((service) => service.id === "chronos").status, "available");
     assert.equal(snapshot.services.find((service) => service.id === "saturn").status, "available");
-    assert.equal(snapshot.services.find((service) => service.id === "perimetr").status, "degraded");
-    assert.equal(snapshot.services.find((service) => service.id === "laboratory").checks.readiness.level, "liveness");
-    assert.equal(snapshot.services.find((service) => service.id === "laboratory").status, "degraded");
     assert.equal(snapshot.services.find((service) => service.id === "volt").status, "degraded");
     assert.ok(calls.every((url) => !url.includes("neptune") && !url.includes("updater")));
     assert.ok(calls.every((url) => url.startsWith("https://")));
@@ -57,7 +50,7 @@ test("service collector refuses placeholder and local-address Register targets",
   let calls = 0;
   const values = configuredRegister();
   values["services.kernel.sni"] = "127.0.0.1";
-  values["services.chronos.sni"] = "chronos.example.com";
+  values["services.saturn.sni"] = "saturn.example.com";
   const collector = createServiceStatusCollector({
     getRegisterValues: () => values,
     intervalMs: 60_000,
@@ -69,8 +62,8 @@ test("service collector refuses placeholder and local-address Register targets",
   try {
     const snapshot = await collector.snapshot();
     assert.equal(snapshot.services.find((service) => service.id === "kernel").status, "unconfigured");
-    assert.equal(snapshot.services.find((service) => service.id === "chronos").status, "unconfigured");
-    assert.equal(calls, 7);
+    assert.equal(snapshot.services.find((service) => service.id === "saturn").status, "unconfigured");
+    assert.equal(calls, 2);
   } finally {
     collector.close();
   }
@@ -84,13 +77,13 @@ test("service collector requires three consecutive failures before unavailable",
   });
   try {
     let snapshot = await collector.snapshot();
-    assert.equal(snapshot.services.find((service) => service.id === "chronos").status, "degraded");
+    assert.equal(snapshot.services.find((service) => service.id === "saturn").status, "degraded");
     await collector.refresh();
     snapshot = await collector.snapshot();
-    assert.equal(snapshot.services.find((service) => service.id === "chronos").status, "degraded");
+    assert.equal(snapshot.services.find((service) => service.id === "saturn").status, "degraded");
     await collector.refresh();
     snapshot = await collector.snapshot();
-    assert.equal(snapshot.services.find((service) => service.id === "chronos").status, "unavailable");
+    assert.equal(snapshot.services.find((service) => service.id === "saturn").status, "unavailable");
   } finally {
     collector.close();
   }

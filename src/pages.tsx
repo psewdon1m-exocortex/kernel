@@ -229,10 +229,7 @@ export function DashboardPage({ settings, onSettings, notify }: {
 
 const SERVICE_CARDS: Array<{ id: ServiceId; cardId: DashboardCardId; name: string }> = [
   { id: "kernel", cardId: "service-kernel", name: "KERNEL" },
-  { id: "chronos", cardId: "service-chronos", name: "Chronos" },
-  { id: "perimetr", cardId: "service-perimetr", name: "Perimetr" },
   { id: "saturn", cardId: "service-saturn", name: "Saturn" },
-  { id: "laboratory", cardId: "service-laboratory", name: "Laboratory" },
   { id: "volt", cardId: "service-volt", name: "Volt" },
 ];
 

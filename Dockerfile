@@ -7,6 +7,7 @@ COPY vendor/open-node/packages vendor/open-node/packages
 RUN npm ci
 
 COPY index.html tsconfig.json vite.config.ts ./
+COPY public public
 COPY src src
 RUN npm run build
 RUN npm prune --omit=dev

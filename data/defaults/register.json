@@ -62,12 +62,12 @@
   {
     "key": "services.saturn.health.path",
     "value": "",
-    "description": "Public readiness path checked by Kernel"
+    "description": "Redacted public readiness path checked by browsers and Kernel"
   },
   {
     "key": "services.saturn.health.contract",
     "value": "",
-    "description": "Saturn exposes dependency-aware readiness through its public edge"
+    "description": "Saturn exposes dependency-aware readiness without dependency details through its public edge"
   },
   {
     "key": "services.saturn.paths.backup_ingest",
