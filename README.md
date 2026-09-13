@@ -1,6 +1,6 @@
 # Exocortex Kernel
 
-> Documentation authority: the workspace-wide [Part 00](../.docs/PART_00_SYSTEM_UNIFICATION_SPECIFICATION.md)
+> Documentation authority: the workspace-wide [Part 00](https://github.com/psewdon1m-exocortex/general/blob/main/PART_00_SYSTEM_UNIFICATION_SPECIFICATION.md)
 > and its applicable Parts are normative. This repository documents
 > Kernel-specific details only; a conflict is corrected here and a material
 > implementation difference follows the Part 00 divergence protocol.
@@ -8,7 +8,7 @@
 ## Required pre-push gate
 
 After native checks and before every push, complete the checks required by
-[Part 06 — Unified acceptance checklist](../.docs/PART_06_UNIFIED_ACCEPTANCE_CHECKLIST.md) and run the versioned policy in
+[Part 06 — Unified acceptance checklist](https://github.com/psewdon1m-exocortex/general/blob/main/PART_06_UNIFIED_ACCEPTANCE_CHECKLIST.md) and run the versioned policy in
 `.github/pre-push-gate.json` through `scripts/pre-push-gate.py`. CI repeats the
 gate on `main`. Security is always reviewed; backup/restore, updater, embedded
 Documentation and affected technical docs are reviewed when relevant. Apply
@@ -126,7 +126,7 @@ that server configuration only after local Kernel health succeeds; keep the
 certificate, SNI and public ports out of Kernel `.env`.
 `services.kernel.port` is the client-facing HTTPS port (normally `443`), not
 the private listener port. The authoritative ordering and ownership rules are
-in [Part 04](../.docs/PART_04_BOOTSTRAP_AND_DEPLOYMENT.md).
+in [Part 04](https://github.com/psewdon1m-exocortex/general/blob/main/PART_04_BOOTSTRAP_AND_DEPLOYMENT.md).
 
 Keep the private Node listener on loopback and publish only the HTTPS Nginx
 virtual host. Access Key verification, secure sessions, CSRF checks and
@@ -297,6 +297,6 @@ npm run check
 - [Web update architecture](WEB_SERVICE_UPDATE_ARCHITECTURE.md)
 - [Release process](RELEASING.md)
 - [Open Node snapshot](vendor/open-node/VENDORED_FROM.md)
-- [Центральная спецификация унификации](../.docs/PART_00_SYSTEM_UNIFICATION_SPECIFICATION.md)
+- [Центральная спецификация унификации](https://github.com/psewdon1m-exocortex/general/blob/main/PART_00_SYSTEM_UNIFICATION_SPECIFICATION.md)
 
 The current six-service deployment, trust, recovery and acceptance contract is documented in [Deployment readiness](DEPLOYMENT_READINESS.md).

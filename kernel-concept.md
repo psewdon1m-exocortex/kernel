@@ -80,7 +80,7 @@ Constitution
 Settings
 ```
 
-Web UI следует правилам [центральной спецификации](../.docs/PART_00_SYSTEM_UNIFICATION_SPECIFICATION.md):
+Web UI следует правилам [центральной спецификации](https://github.com/psewdon1m-exocortex/general/blob/main/PART_00_SYSTEM_UNIFICATION_SPECIFICATION.md):
 
 - истинно чёрная рабочая поверхность;
 - белые информационные линии;
@@ -255,7 +255,7 @@ topology.onode.json
 `source_revision`.
 
 Оригинальный дизайн Open Node сохраняется внутри Canvas. Оболочка страницы и
-основная навигация Kernel следуют [центральной спецификации](../.docs/PART_00_SYSTEM_UNIFICATION_SPECIFICATION.md).
+основная навигация Kernel следуют [центральной спецификации](https://github.com/psewdon1m-exocortex/general/blob/main/PART_00_SYSTEM_UNIFICATION_SPECIFICATION.md).
 
 ## 10. Register
 
@@ -549,7 +549,7 @@ Kernel готов, если:
     значениях в памяти; новый процесс без Kernel и Volt не запускается.
 16. Register хранит только строгие `volt://<entry-id>/<value-position>` ссылки и не
     содержит `services.kernel.service_token` или других bootstrap credentials.
-17. UI следует [центральной спецификации](../.docs/PART_00_SYSTEM_UNIFICATION_SPECIFICATION.md).
+17. UI следует [центральной спецификации](https://github.com/psewdon1m-exocortex/general/blob/main/PART_00_SYSTEM_UNIFICATION_SPECIFICATION.md).
 18. Интерфейс работает с клавиатурой и на узком viewport без overlap.
 19. Мутации фиксируются в audit.
 20. Unit, API и browser tests проходят.
