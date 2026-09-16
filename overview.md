@@ -190,7 +190,7 @@ Recovery archive должен иметь manifest, checksums, allow-list пут�
 
 Updater — один root-owned daemon на Linux host. Каждый head получает отдельный control token и может вызывать только разрешённые операции своего profile. Main-service контейнеры не получают Docker socket или произвольный root shell.
 
-Текущий coordinated baseline требует Updater `0.4.3` или новее; Kernel 0.2.11 закрепляет `0.4.3` как проверенную release dependency. Репозиторий сервиса хранит точную версию в `.release/updater.version`.
+Текущий coordinated baseline требует Updater `0.4.3` или новее; Kernel 0.2.12 закрепляет `0.4.3` как проверенную release dependency. Репозиторий сервиса хранит точную версию в `.release/updater.version`.
 
 Релиз main/helper service обязан:
 
@@ -265,7 +265,7 @@ Audit фиксирует значимые мутации и machine requests б�
 
 | Компонент | Релизная линия, использованная при сверке |
 |---|---|
-| Kernel | `kernel-v0.2.11` |
+| Kernel | `kernel-v0.2.12` |
 | Volt | `volt-v0.1.5` |
 | Saturn | `saturn-v0.1.15` |
 | Updater | coordinated minimum `updater-v0.4.3`; более новые helper releases требуют отдельной compatibility verification |

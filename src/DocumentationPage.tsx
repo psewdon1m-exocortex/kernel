@@ -334,7 +334,7 @@ export function DocumentationPage() {
         onScroll={updateActiveSection}
       >
         <header>
-          <span className="documentation-kicker">Kernel 0.2.11 / Operator Guide</span>
+          <span className="documentation-kicker">Kernel 0.2.12 / Operator Guide</span>
           <h2>Welcome To Kernel</h2>
           <p>A practical guide to installing, configuring, operating, backing up, and diagnosing the passive Exocortex registry.</p>
         </header>

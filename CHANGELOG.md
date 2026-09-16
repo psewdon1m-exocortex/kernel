@@ -4,6 +4,8 @@ This document specializes [Part 00 — system unification specification](https:/
 
 ## Unreleased
 
+## 0.2.12
+
 - Add Laboratory and Chronos to the Kernel availability Dashboard through their
   registered public-readiness contracts without changing the initial
   six-service profile.
