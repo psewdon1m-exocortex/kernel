@@ -488,6 +488,12 @@ GET  /api/audit
 задаётся оператором в отмеченном поле отдельного mode-`0600` `.env`. Register
 не публикует ни исходный ключ, ни verifier, ни session secret.
 
+Access Key обязателен как явно заданное значение, но не имеет password-policy:
+никаких minimum/maximum length, обязательных или запрещённых символов,
+URL-safe/ASCII, strength/entropy либо известных/example/placeholder denylist.
+Все пути обязаны сравнивать его как точное непрозрачное значение без trim,
+нормализации, изменения регистра или усечения.
+
 Операторская web-сессия имеет доступ ко всем административным endpoints.
 Внутренний service token имеет read-only доступ только к стабильному machine
 API v1:

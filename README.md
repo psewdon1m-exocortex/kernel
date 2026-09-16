@@ -16,6 +16,16 @@ SEO/GEO checks to intentionally public/indexable surfaces and concealment,
 crawler and probe-resistance checks to private or authenticated surfaces.
 Every area requires `PASS` evidence or a reasoned `N/A`.
 
+## Required pre-release known-problem gate
+
+Before a service-qualified release is finalized, evaluate every active ID in
+[Part 12](https://github.com/psewdon1m-exocortex/general/blob/main/PART_12_KNOWN_DEPLOYMENT_AND_OPERATIONS_PROBLEMS.md) against the exact candidate. Retain
+`known-problems-report.json` bound to the service revision, qualified tag,
+immutable central-documentation revision and catalog digest. Missing, stale,
+failed, unknown or unsupported `N/A` evidence blocks publication. This is a
+normative release requirement; until the repository workflow generates and
+enforces that report, the release pipeline remains an implementation gap.
+
 ## Автоматические резервные копии
 
 Updater автоматически устанавливает общий Neptune после настройки Register и
@@ -118,6 +128,18 @@ http://127.0.0.1:18180
 Единый ключ оператора задаётся через `KERNEL_ACCESS_KEY` в локальном `.env`.
 Во время staged migration существующий `KERNEL_ADMIN_PASSWORD` принимается как
 совместимый источник verifier; имя оператора больше не требуется.
+
+`KERNEL_ACCESS_KEY` — обязательное, явно заданное оператором непрозрачное точное
+значение, а не пароль с policy. Для него нет минимальной или максимальной длины,
+обязательных/запрещённых символов, URL-safe/ASCII-ограничения, проверки
+strength/entropy или denylist известных/example/placeholder значений. Bootstrap,
+login, смена ключа и restore должны передавать его без trim, нормализации,
+изменения регистра и усечения; ошибкой является только отсутствие настройки.
+
+> Расхождение реализации (2026-09-14): текущие installer, startup validation и
+> смена ключа требуют не менее 12 символов, отклоняют отдельные placeholder-
+> значения, а значит не соответствуют общему контракту `BST-13`. До исправления
+> кода и тестов это блокирует следующий production release.
 
 Production Compose contains no reverse proxy and publishes Kernel only on VPS
 loopback. One shared host-level Nginx owns TCP 80/443 and routes the Kernel SNI
