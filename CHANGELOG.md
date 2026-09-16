@@ -4,6 +4,11 @@ This document specializes [Part 00 — system unification specification](https:/
 
 ## Unreleased
 
+## 0.2.14
+
+- Add a persistent Topology Map Focus control that synchronizes with Sidebar
+  auto-hide and expands the Excalidraw Canvas across the viewport.
+
 ## 0.2.13
 
 - Add a persistent Topology Map grid control that is stored with Excalidraw

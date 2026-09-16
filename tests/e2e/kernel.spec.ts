@@ -160,7 +160,7 @@ test("operator can navigate every Kernel section", async ({ page }) => {
 
   await navigate(page, "Documentation");
   await expect(page.locator(".page-title h1")).toHaveText("documentation");
-  await expect(page.getByText("Kernel 0.2.13 / Operator Guide", { exact: true })).toBeVisible();
+  await expect(page.getByText("Kernel 0.2.14 / Operator Guide", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Welcome To Kernel" })).toBeVisible();
   const documentationSearch = page.getByLabel("Search documentation");
   await documentationSearch.fill("last-known-good");
