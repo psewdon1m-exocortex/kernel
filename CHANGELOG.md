@@ -4,6 +4,13 @@ This document specializes [Part 00 — system unification specification](https:/
 
 ## Unreleased
 
+## 0.2.13
+
+- Add a persistent Topology Map grid control that is stored with Excalidraw
+  revisions and restored across reloads.
+- Refresh the bundled Overview and Constitution for Volt 0.1.7, the Saturn
+  storage gateway boundary and the current Updater compatibility context.
+
 ## 0.2.12
 
 - Add Laboratory and Chronos to the Kernel availability Dashboard through their
