@@ -134,6 +134,7 @@ docker compose ps`}</pre>
           <li>Use Excalidraw selection, grouping, binding, layers, undo/redo, pan, zoom, and the reusable shape Library.</li>
           <li>Open or save portable <code>.excalidraw</code> files and export the drawing as PNG or SVG from the native menu.</li>
           <li>KERNEL autosaves changed scene data and embedded image bytes as immutable server revisions.</li>
+          <li>Use <strong>Grid On</strong> or <strong>Grid Off</strong> to toggle the native Canvas grid. The setting is stored with the topology revision.</li>
           <li>Use <strong>Save</strong> for an immediate server save and <strong>Versions</strong> to restore an earlier revision as a new active one.</li>
         </ul>
       </>

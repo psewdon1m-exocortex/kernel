@@ -93,7 +93,7 @@ test("operator can navigate every Kernel section", async ({ page }) => {
   await navigate(page, "Overview");
   await expect(page.locator(".page-title h1")).toHaveText("overview");
   await expect(page.getByRole("heading", { name: "EXOCORTEX", exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "6. Volt 0.1.5", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "6. Volt 0.1.7", exact: true })).toBeVisible();
 
   await navigate(page, "Constitution");
   await expect(page.locator(".page-title h1")).toHaveText("constitution");
@@ -293,6 +293,8 @@ test("Topology embeds Excalidraw across the requested viewport and persists draw
   await expect(editor.getByRole("radio", { name: /Rectangle/ })).toBeVisible();
   await expect(editor.getByRole("radio", { name: /Draw/ })).toBeVisible();
   await expect(editor.getByRole("radio", { name: /Text/ })).toBeVisible();
+  const gridToggle = page.getByRole("button", { name: "Hide canvas grid" });
+  await expect(gridToggle).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("button", { name: "Save", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Versions", exact: true })).toBeVisible();
 
@@ -301,6 +303,9 @@ test("Topology embeds Excalidraw across the requested viewport and persists draw
   expect(geometry?.y).toBeCloseTo(129, 0);
   expect(geometry?.width).toBeCloseTo(1654, 0);
   expect(geometry?.height).toBeCloseTo(898, 0);
+
+  await gridToggle.click();
+  await expect(page.getByRole("button", { name: "Show canvas grid" })).toHaveAttribute("aria-pressed", "false");
 
   const before = await page.evaluate(async () => {
     const response = await fetch("/api/topology");
@@ -319,11 +324,13 @@ test("Topology embeds Excalidraw across the requested viewport and persists draw
     return (await response.json()).project;
   });
   expect(saved.type).toBe("excalidraw");
+  expect(saved.appState.gridModeEnabled).toBe(false);
   expect(saved.elements.length).toBe(before + 1);
   expect(saved.elements.at(-1).type).toBe("rectangle");
 
   await page.reload();
   await expect(page.getByLabel("Topology Map editor").locator(".excalidraw")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Show canvas grid" })).toHaveAttribute("aria-pressed", "false");
   const restoredCount = await page.evaluate(async () => {
     const response = await fetch("/api/topology");
     return (await response.json()).project.elements.length as number;

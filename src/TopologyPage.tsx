@@ -70,6 +70,8 @@ function normalizeScene(value: unknown): { document: ExcalidrawDocument; migrate
       appState: {
         viewBackgroundColor: "#ffffff",
         theme: "dark",
+        gridSize: 20,
+        gridModeEnabled: true,
         ...value.appState,
         ...(value.appState.viewBackgroundColor === "#111318" ? { viewBackgroundColor: "#ffffff" } : {}),
       },
@@ -114,6 +116,7 @@ export function TopologyPage({ notify }: { notify: Notify }) {
   const [scene, setScene] = useState<{ key: number; data: ImportedDataState }>();
   const [metadata, setMetadata] = useState<Omit<TopologyPayload, "project">>();
   const [status, setStatus] = useState("Loading map...");
+  const [gridEnabled, setGridEnabled] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [versions, setVersions] = useState<RevisionSummary[]>([]);
   const [restore, setRestore] = useState<RevisionSummary>();
@@ -182,6 +185,7 @@ export function TopologyPage({ notify }: { notify: Notify }) {
         lastSavedRef.current = normalized.migrated ? "" : serialized;
         setMetadata(meta);
         setStatus(normalized.migrated ? "Migrating map..." : "Saved");
+        setGridEnabled(normalized.document.appState.gridModeEnabled !== false);
         sceneKeyRef.current += 1;
         setScene({ key: sceneKeyRef.current, data: sceneForEditor(normalized.document) });
         if (normalized.migrated) {
@@ -207,6 +211,7 @@ export function TopologyPage({ notify }: { notify: Notify }) {
     appState: AppState,
     files: BinaryFiles,
   ) => {
+    setGridEnabled(appState.gridModeEnabled);
     const project = serializeScene(elements, appState, files);
     const serialized = JSON.stringify(project);
     latestSceneRef.current = project;
@@ -220,6 +225,14 @@ export function TopologyPage({ notify }: { notify: Notify }) {
     window.clearTimeout(saveTimerRef.current);
     saveTimerRef.current = window.setTimeout(() => void save(false), 1000);
   }, [save]);
+
+  const toggleGrid = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const enabled = !editor.getAppState().gridModeEnabled;
+    editor.updateScene({ appState: { gridModeEnabled: enabled } });
+    setGridEnabled(enabled);
+  }, []);
 
   const loadVersions = async () => {
     try {
@@ -276,7 +289,6 @@ export function TopologyPage({ notify }: { notify: Notify }) {
             langCode="en"
             theme="dark"
             autoFocus
-            gridModeEnabled
             UIOptions={{
               canvasActions: {
                 changeViewBackgroundColor: true,
@@ -294,6 +306,14 @@ export function TopologyPage({ notify }: { notify: Notify }) {
                 <span className={`topology-host-status is-${status.toLowerCase().replace(/[^a-z]+/g, "-").replace(/^-|-$/g, "")}`} aria-live="polite">
                   {status}
                 </span>
+                <button
+                  type="button"
+                  aria-label={gridEnabled ? "Hide canvas grid" : "Show canvas grid"}
+                  aria-pressed={gridEnabled}
+                  onClick={toggleGrid}
+                >
+                  Grid {gridEnabled ? "On" : "Off"}
+                </button>
                 <button type="button" onClick={() => void save(true)}>Save</button>
                 <button type="button" onClick={openHistory}>Versions</button>
               </div>

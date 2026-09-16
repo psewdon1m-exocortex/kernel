@@ -146,9 +146,9 @@ Batch resolution ограничен 20 уникальными элементам
 
 ---
 
-## 6. Volt 0.1.5
+## 6. Volt 0.1.7
 
-Последняя релизная версия, использованная для этой редакции, — `volt-v0.1.5`.
+Последняя релизная версия, использованная для этой редакции, — `volt-v0.1.7`.
 
 Volt — локальное зашифрованное хранилище и единственный authority для значений, на которые ссылается Kernel Register.
 
@@ -168,6 +168,12 @@ Access Key — точное непрозрачное значение. Он не
 ---
 
 ## 7. Saturn, Neptune и восстановление
+
+Актуальная релизная линия Saturn — `saturn-v0.1.15`. Saturn является единственным Gateway к подключённому файловому хранилищу: browser UI, Drop Point, shared links, WebDAV-клиенты и backup producers не получают SFTP credential и не обращаются к Storage Box напрямую.
+
+Owner workspace предоставляет файловый менеджер с resumable upload, версиями, корзиной, ZIP-операциями и bounded previews. Публичные Drop Point и shared links являются отдельными capability-сценариями с ограниченным scope, сроком жизни и собственной сессией; они не открывают owner workspace и не позволяют перечислять произвольное содержимое хранилища. Бизнес-корни `drop point`, `laboratory`, `backups`, `mastermind`, `volt` и `sync` защищаются прикладной политикой Saturn, а скрытый `_system` остаётся runtime-пространством Gateway.
+
+Активный SFTP-профиль выбирается в Settings. Saturn сначала проверяет fingerprint и round-trip целевого хранилища, затем воспринимает его как независимый набор файлов: автоматической миграции байтов нет, индекс и storage-scoped capabilities перестраиваются для нового профиля. Обычные настройки доступны внутри действующей owner session; смена самого Access Key всё равно требует точного текущего ключа в форме операции.
 
 Saturn выдаёт одноразовые setup codes, хранит desired schedules и remote jobs, принимает recovery archives и approved mirrors. Setup code имеет тип, срок жизни и одноразовое применение.
 
@@ -266,9 +272,9 @@ Audit фиксирует значимые мутации и machine requests б�
 | Компонент | Релизная линия, использованная при сверке |
 |---|---|
 | Kernel | `kernel-v0.2.12` |
-| Volt | `volt-v0.1.5` |
+| Volt | `volt-v0.1.7` |
 | Saturn | `saturn-v0.1.15` |
-| Updater | coordinated minimum `updater-v0.4.3`; более новые helper releases требуют отдельной compatibility verification |
+| Updater | coordinated minimum `updater-v0.4.3`; актуальная helper release `updater-v0.4.9` требует сохранения per-head compatibility verification |
 | Neptune | `neptune-v0.1.7` для общей Linux release line |
 | Gryphon | `gryphon-v0.1.4` |
 

@@ -367,6 +367,10 @@ Topology Map предназначена для человека.
 - Для бинарных конфликтов ДОЛЖНЫ сохраняться обе версии.
 - Для secret vault перед merge ДОЛЖЕН создаваться backup.
 - Конфликтующие копии НЕ ДОЛЖНЫ удаляться автоматически до подтверждения результата.
+- Все byte-level операции с подключённым файловым хранилищем Saturn ДОЛЖНЫ проходить через Saturn Gateway. Browser, Drop Point, shared-link consumer, device и backup producer НЕ ДОЛЖНЫ получать SFTP credential или обращаться к Storage Box напрямую.
+- Изоляция Saturn business roots и service namespaces ДОЛЖНА обеспечиваться Gateway policy и scoped capabilities; соседние Storage Box sub-account НЕ ДОЛЖНЫ использоваться как замена прикладной авторизации.
+- Drop Point и shared links ДОЛЖНЫ оставаться отдельными capability-контурами и НЕ ДОЛЖНЫ неявно наследовать owner session или право перечислять содержимое за пределами выданного scope.
+- Смена активного storage profile НЕ ДОЛЖНА неявно мигрировать или удалять байты прежнего хранилища. Новый профиль ДОЛЖЕН быть проверен до активации и рассматриваться как независимый file set с собственным индексом и storage-scoped capabilities.
 
 ## 25. Производные данные
 
