@@ -13,9 +13,13 @@ coverage/
 vendor/open-node/**/dist/
 vendor/open-node/node_modules/
 *.log
+__pycache__/
 .tmp/
 .release-inputs/
+.release-evidence/
 release-artifacts/
+known-problems-report.json
+.pre-push-gate-report.json
 *.pem
 *.key
 *.crt

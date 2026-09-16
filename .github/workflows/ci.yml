@@ -5,6 +5,7 @@ on:
   pull_request:
   push:
     branches: [main]
+    tags: ["v*"]
 
 permissions:
   contents: read
@@ -28,10 +29,27 @@ jobs:
           sh -n bootstrap.sh install.sh
           npm ci
           npm audit --omit=dev --audit-level=high
-          npm test
+          python3 scripts/known-problems-gate.py --record unit --command npm test
           npm run build
           npx playwright install --with-deps chromium
           npm run test:browser
+      - name: Deployment, bootstrap and Part 12 verification
+        run: |
+          python3 scripts/test-known-problems-gate.py
+          python3 scripts/known-problems-gate.py --record deployment --command python3 scripts/test-deployment-contract.py
+          python3 scripts/known-problems-gate.py --record bootstrap --command docker run --rm -v "$PWD:/src:ro" -w /src node:24-bookworm python3 scripts/test-bootstrap.py
+          python3 scripts/known-problems-gate.py --phase structure
+      - name: Preserve current-revision Part 12 evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kernel-policy-${{ github.sha }}
+          path: |
+            .release-evidence/
+            known-problems-report.json
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 14
 
   pre-push-gate:
     name: Pre-push gate

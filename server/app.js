@@ -1232,8 +1232,8 @@ export function createKernelApp(options) {
       if (nextAccessKey !== repeatedAccessKey) {
         return res.status(400).json({ error: "New Access Key entries do not match" });
       }
-      if (nextAccessKey.length < 12) {
-        return res.status(400).json({ error: "New Access Key must contain at least 12 characters" });
+      if (nextAccessKey.length === 0) {
+        return res.status(400).json({ error: "New Access Key must be non-empty" });
       }
       const generation = store.changePasswordHash(hashPassword(nextAccessKey), safeActor(req));
       const token = createSessionToken(sessionSecret, generation);

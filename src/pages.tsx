@@ -1044,8 +1044,8 @@ function LegacySettingsPage({
         <header><h2>SECURITY</h2><span>Single-operator access</span></header>
         <form className="settings-content form-grid" onSubmit={changePassword}>
           <label><span>Current password</span><input type="password" autoComplete="current-password" required value={password.current} onChange={(event) => setPassword({ ...password, current: event.target.value })} /></label>
-          <label><span>New password</span><input type="password" autoComplete="new-password" minLength={12} required value={password.next} onChange={(event) => setPassword({ ...password, next: event.target.value })} /></label>
-          <label><span>Repeat new password</span><input type="password" autoComplete="new-password" minLength={12} required value={password.repeat} onChange={(event) => setPassword({ ...password, repeat: event.target.value })} /></label>
+          <label><span>New password</span><input type="password" autoComplete="new-password" required value={password.next} onChange={(event) => setPassword({ ...password, next: event.target.value })} /></label>
+          <label><span>Repeat new password</span><input type="password" autoComplete="new-password" required value={password.repeat} onChange={(event) => setPassword({ ...password, repeat: event.target.value })} /></label>
           <div className="row-actions"><button type="submit" disabled={passwordPending}>{passwordPending ? "Changing..." : "Change password"}</button></div>
         </form>
       </section>
@@ -1801,8 +1801,8 @@ export function SettingsPage({
         <Modal title="Security" onClose={() => !securityPending && setOpenSection(undefined)}>
           <form className="form-stack" onSubmit={changeAccessKey}>
             <label><span>Current Access Key</span><input type="password" autoComplete="current-password" required value={accessKey.current} onChange={(event) => setAccessKey({ ...accessKey, current: event.target.value })} /></label>
-            <label><span>New Access Key</span><input type="password" autoComplete="new-password" minLength={12} required value={accessKey.next} onChange={(event) => setAccessKey({ ...accessKey, next: event.target.value })} /></label>
-            <label><span>Repeat new Access Key</span><input type="password" autoComplete="new-password" minLength={12} required value={accessKey.repeat} onChange={(event) => setAccessKey({ ...accessKey, repeat: event.target.value })} /></label>
+            <label><span>New Access Key</span><input type="password" autoComplete="new-password" required value={accessKey.next} onChange={(event) => setAccessKey({ ...accessKey, next: event.target.value })} /></label>
+            <label><span>Repeat new Access Key</span><input type="password" autoComplete="new-password" required value={accessKey.repeat} onChange={(event) => setAccessKey({ ...accessKey, repeat: event.target.value })} /></label>
             <p className="hint">Applying a new key revokes every other operator session.</p>
             <div className="dialog-actions"><button type="button" disabled={securityPending} onClick={() => setOpenSection(undefined)}>Cancel</button><button type="submit" disabled={securityPending}>{securityPending ? "Changing..." : "Change Access Key"}</button></div>
           </form>

@@ -23,8 +23,9 @@ if (command === "template") {
     const url = new URL(argumentsMap.get("--kernel-url"));
     if (url.username || url.password || url.search || url.hash || (url.protocol !== "https:" && !(url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)))) throw new Error("Use the private HTTPS Kernel origin or loopback HTTP");
     const keyFile = argumentsMap.get("--access-key-file");
-    if (!keyFile || fs.statSync(keyFile).size > 4096) throw new Error("Provide a protected Access Key file");
-    const accessKey = fs.readFileSync(keyFile, "utf8").trim();
+    if (!keyFile || !fs.statSync(keyFile).isFile()) throw new Error("Provide a protected Access Key file");
+    const accessKey = fs.readFileSync(keyFile, "utf8");
+    if (accessKey.length === 0) throw new Error("Provide a non-empty Access Key file");
     const login = await fetch(new URL("/api/auth/login", url), { method: "POST", redirect: "error", headers: { "Content-Type": "application/json", Origin: url.origin }, body: JSON.stringify({ access_key: accessKey }) });
     if (!login.ok) throw new Error("Kernel operator authentication failed");
     const cookie = login.headers.getSetCookie().map(value => value.split(";")[0]).join("; ");

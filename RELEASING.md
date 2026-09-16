@@ -12,11 +12,6 @@ sequence starts at `0.0.1`. A plain tag such as `v0.0.1` invokes
 verification-only CI and must not publish or mutate a release; only the
 service-qualified `kernel-v...` namespace may invoke the release workflow.
 
-> Current implementation gap (2026-09-13): `ci.yml` does not yet listen to
-> plain `v*` tags. A separate CI change is required before a plain tag can be
-> used as verification evidence; qualified Kernel releases remain gated by the
-> protected release workflow.
-
 ## Create a release
 
 1. Update `kernel/package.json`, `KERNEL_VERSION` examples and `CHANGELOG.md`.
@@ -24,15 +19,16 @@ service-qualified `kernel-v...` namespace may invoke the release workflow.
 3. Set `.release/updater.version` to an existing checksummed release from the
    independent Updater repository.
 4. Commit the release state and push `kernel-vX.Y.Z` to the Kernel repository.
-5. `.github/workflows/release.yml` downloads and verifies the pinned Updater
-   bundle, then builds the OCI image, Compose bundle and canonical release
-   manifest. The protected signing job reads Kernel's private release key only
-   from GitHub Secrets, signs the manifest, derives the public counterpart and
-   embeds only that public key in the standalone versioned `bootstrap.sh`.
-   Before publication CI verifies the signature, checksums and bootstrap trust
-   payload and confirms that no private key bytes occur in any artifact, log or
-   cache. It then publishes the SBOM, provenance and compatibility Sigstore
-   bundles. The embedded Updater bundle must contain its independently trusted
+5. `.github/workflows/release.yml` downloads and verifies the pinned Updater,
+   publishes and smoke-tests one immutable candidate image, and revalidates the
+   Part 12 pre-signing receipts before the protected signing job can read
+   Kernel's private release key. The signing job builds the Compose bundle and
+   canonical manifest from that exact digest, signs them, derives the public
+   counterpart and embeds only that public key in the versioned `bootstrap.sh`.
+   Signed assets are staged as a prerelease and verified anonymously. The final
+   97-ID report, SBOM, provenance and compatibility Sigstore bundles are
+   attached before stable release and image aliases are promoted. The embedded
+   Updater bundle must contain its independently trusted
    `release-trust/updater.pem`, `release-trust/neptune.pem` and
    `release-trust/gryphon.pem`.
 6. Verify the GitHub release and image digest before changing production.

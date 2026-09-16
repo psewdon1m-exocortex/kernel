@@ -4,6 +4,10 @@ set -euo pipefail
 version="${1:?version is required}"
 output="${2:-release-artifacts}"
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+case "$output" in
+  /*) output_dir="$output" ;;
+  *) output_dir="$root/$output" ;;
+esac
 repository="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
 image_reference="${IMAGE_REFERENCE:?IMAGE_REFERENCE is required}"
 image_digest="${IMAGE_DIGEST:?IMAGE_DIGEST is required}"
@@ -18,7 +22,7 @@ updater_version="${UPDATER_BUNDLE_VERSION:?UPDATER_BUNDLE_VERSION is required}"
   exit 3
 }
 
-mkdir -p "$root/$output"
+mkdir -p "$output_dir"
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 cp "$root/compose.yaml" "$root/compose.production.yaml" "$root/compose.updater.yaml" \
@@ -32,10 +36,10 @@ sed -i \
   -e "s|^KERNEL_IMAGE=.*|KERNEL_IMAGE=${image_reference}@${image_digest}|" \
   "$stage/.env.example"
 
-bundle="$root/$output/kernel-${version}-compose.tar.gz"
+bundle="$output_dir/kernel-${version}-compose.tar.gz"
 tar -czf "$bundle" -C "$stage" .
 bundle_sha="$(sha256sum "$bundle" | awk '{print $1}')"
-cat > "$root/$output/kernel-release.json" <<EOF
+cat > "$output_dir/kernel-release.json" <<EOF
 {
   "schema_version": 1,
   "service": "kernel",

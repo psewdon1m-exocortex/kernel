@@ -15,9 +15,17 @@ const valid = {
   voltKernelToken: "v".repeat(32),
 };
 
-test("runtime secret validation accepts production-strength values", () => {
+test("runtime secret validation accepts production values and opaque Access Keys", () => {
   assert.doesNotThrow(() => validateRuntimeSecrets(valid));
   assert.doesNotThrow(() => validateRuntimeSecrets({ ...valid, voltUrl: "", voltKernelToken: "" }));
+  for (const accessKey of ["x", "CHANGE_ME", "  ", " ключ\nwith trailing whitespace \n"]) {
+    assert.doesNotThrow(() => validateRuntimeSecrets({ ...valid, accessKey, adminPassword: undefined }));
+  }
+  assert.doesNotThrow(() => validateRuntimeSecrets({ ...valid, accessKey: "", adminPassword: valid.adminPassword }));
+  assert.throws(
+    () => validateRuntimeSecrets({ ...valid, accessKey: "", adminPassword: "" }),
+    /non-empty exact value/,
+  );
 });
 
 test("stored Volt tokens are authenticated and bound to the Kernel session secret", () => {
@@ -32,7 +40,6 @@ test("runtime secret validation rejects example placeholders", () => {
   assert.throws(
     () => validateRuntimeSecrets({
       ...valid,
-      adminPassword: "change-this-operator-password",
       sessionSecret: "replace-with-at-least-32-random-characters",
       apiToken: "replace-with-at-least-24-random-characters",
     }),

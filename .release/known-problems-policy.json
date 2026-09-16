@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "service": "kernel",
+  "catalog_revision": "c54527d1d72c096daccb61a130dfc35152937944",
+  "catalog_sha256": "50c76318747867575935e77fff0520c9517fe513912fef4c8c08944de9562ac5",
+  "remote_path": "PART_12_KNOWN_DEPLOYMENT_AND_OPERATIONS_PROBLEMS.md",
+  "active_ids": 97,
+  "case_defaults": {
+    "REL": ["deployment"],
+    "BST": ["bootstrap", "deployment"],
+    "TRUST": ["bootstrap", "deployment"],
+    "PERM": ["bootstrap", "deployment"],
+    "CTR": ["deployment"],
+    "NET": ["deployment"],
+    "HLT": ["unit", "deployment"],
+    "INT": ["unit", "deployment", "helper-contract"],
+    "DATA": ["unit", "deployment", "helper-contract"],
+    "OPS": ["deployment"]
+  },
+  "case_overrides": {
+    "BST-13": ["unit", "bootstrap", "deployment"],
+    "TRUST-07": ["unit", "deployment"],
+    "CTR-08": ["deployment", "helper-contract"],
+    "CTR-09": ["bootstrap", "helper-contract"],
+    "OPS-07": ["unit", "deployment"]
+  },
+  "final_checks": ["REL-03", "REL-06", "REL-09", "TRUST-06"],
+  "not_applicable": {
+    "TRUST-02": {
+      "reason": "Kernel does not implement an SFTP or SSH client and owns no host-key trust store; remote storage transport and fingerprint verification belong to the scoped Neptune and Saturn agents.",
+      "paths": ["compose.production.yaml", "server/neptune-client.js"]
+    },
+    "PERM-04": {
+      "reason": "Kernel does not create files inside shared runtime directories; it consumes agent sockets and root-owned token files through read-only or group-scoped mounts prepared by their owning installers.",
+      "paths": ["compose.production.yaml", "install.sh"]
+    },
+    "HLT-07": {
+      "reason": "Kernel owns local state and a checksummed local export endpoint but no remote-storage credential or root; SFTP read, write and delete capability probes belong to Neptune and Saturn.",
+      "paths": ["server/app.js", "server/neptune-client.js"]
+    },
+    "INT-04": {
+      "reason": "Kernel exports one head backup pipeline under the fixed kernel project identity and does not issue or persist pipeline identities or uniqueness constraints; those are owned by Saturn and Neptune.",
+      "paths": ["compose.production.yaml", "server/neptune-client.js"]
+    },
+    "INT-09": {
+      "reason": "Kernel exposes an HTTP operator interface and typed local agent APIs, but it does not own a chat command gateway, provider command menu, reply keyboard, or conversational command state machine.",
+      "paths": ["src/App.tsx", "server/app.js"]
+    },
+    "INT-10": {
+      "reason": "Kernel does not register external webhooks or callbacks with a provider; its internal restore and backup endpoints are local authenticated agent contracts provisioned by the host installer.",
+      "paths": ["server/app.js", "nginx.security.conf"]
+    },
+    "INT-11": {
+      "reason": "Kernel has no external webhook event ingestion, durable webhook queue, repository filter, or provider worker pipeline whose ping could be confused with end-to-end business processing.",
+      "paths": ["server/app.js", "src/App.tsx"]
+    },
+    "DATA-03": {
+      "reason": "Kernel exposes bounded atomic backup archives to a local agent and accepts bounded restore archives; it does not own resumable remote upload sessions, remote object TTL, or remote quota reservations.",
+      "paths": ["server/app.js", "server/store.js"]
+    },
+    "DATA-05": {
+      "reason": "Kernel owns no external storage credential or namespace on which to execute a write-read-delete canary; those storage capability probes are performed by Neptune and Saturn.",
+      "paths": ["server/neptune-client.js", "compose.production.yaml"]
+    },
+    "DATA-10": {
+      "reason": "Independent storage accounts and failure domains are external deployment resources owned by Saturn and Neptune; Kernel supplies one checksummed export and cannot establish storage independence itself.",
+      "paths": ["server/app.js", "DEPLOYMENT_READINESS.md"]
+    }
+  }
+}

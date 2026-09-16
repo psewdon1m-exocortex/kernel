@@ -613,10 +613,11 @@ describe("Kernel API", () => {
       "dashboard", "overview", "topology", "register", "constitution", "settings",
     ]);
 
+    const exactAccessKey = " CHANGE_ME\n";
     const changed = await agent.post("/api/settings/access-key").send({
       current_access_key: ADMIN_PASSWORD,
-      new_access_key: "new-test-access-key",
-      repeat_access_key: "new-test-access-key",
+      new_access_key: exactAccessKey,
+      repeat_access_key: exactAccessKey,
     });
     assert.equal(changed.status, 200);
     assert.equal(changed.body.sessions_revoked, true);
@@ -624,6 +625,25 @@ describe("Kernel API", () => {
     const audit = await agent.get("/api/audit");
     assert.equal(audit.status, 200);
     assert.ok(audit.body.events.some((event) => event.action === "security.access-key.change"));
+
+    await agent.post("/api/auth/logout");
+    assert.equal((await agent.post("/api/auth/login").send({ access_key: exactAccessKey.trim() })).status, 401);
+    assert.equal((await agent.post("/api/auth/login").send({ access_key: exactAccessKey })).status, 200);
+
+    const backup = await agent
+      .get("/api/backup")
+      .buffer(true)
+      .parse((response, callback) => {
+        const chunks = [];
+        response.on("data", (chunk) => chunks.push(chunk));
+        response.on("end", () => callback(null, Buffer.concat(chunks)));
+      });
+    const inspection = await agent
+      .post("/api/backup/inspect")
+      .attach("file", backup.body, { filename: "access-key-backup.zip", contentType: "application/zip" });
+    assert.equal(inspection.status, 201);
+    assert.equal((await agent.post("/api/backup/restore").send({ inspection_id: inspection.body.inspection_id })).status, 200);
+    assert.equal((await agent.post("/api/auth/login").send({ access_key: exactAccessKey })).status, 200);
   });
 
   test("Volt connection is configured through operator settings without exposing its token", async () => {

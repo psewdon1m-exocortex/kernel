@@ -4,6 +4,18 @@ This document specializes [Part 00 — system unification specification](https:/
 
 ## Unreleased
 
+## 0.2.11
+
+- Align Register search, in-page headings and bundled Overview/Constitution
+  documentation with the current interface and documentation contracts.
+- Keep the Documentation workspace bounded to the viewport with independent
+  navigation/content scrolling and safe automatic bundled-revision upgrades.
+- Treat the operator Access Key as an exact opaque non-empty value across
+  bootstrap, startup, login, rotation and recovery, including the staged legacy
+  environment fallback.
+- Add the revision-bound Part 12 pre-signing/final evidence gate, anonymous
+  published-asset verification and `known-problems-report.json` release asset.
+
 ## 0.2.10
 
 - Align service-local contracts with the central specifications and use

@@ -6,10 +6,7 @@ on:
       - "kernel-v*"
 
 permissions:
-  contents: write
-  packages: write
-  id-token: write
-  attestations: write
+  contents: read
 
 env:
   UPDATER_REPOSITORY: ${{ vars.UPDATER_REPOSITORY || 'psewdon1m-exocortex/updater' }}
@@ -20,38 +17,40 @@ jobs:
       contents: read
     uses: ./.github/workflows/ci.yml
 
-  release:
+  prepare:
     needs: quality-gate
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      image: ${{ steps.image.outputs.reference }}
+      digest: ${{ steps.image.outputs.digest }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
           cache: npm
-      # Updater 0.1.x requires a detached Sigstore bundle while resolving a
-      # head release. Keep it for production upgrade compatibility.
-      - uses: sigstore/cosign-installer@v3.10.1
       - uses: docker/setup-buildx-action@v3
 
-      - name: Resolve version
+      - name: Resolve exact release identity
         id: release
         shell: bash
         run: |
           version="${GITHUB_REF_NAME#kernel-v}"
           [[ "$GITHUB_REF_NAME" == "kernel-v${version}" ]]
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]
+          test "$(node -p "require('./package.json').version")" = "$version"
+          git fetch --no-tags origin main
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Test and build
-        shell: bash
-        run: |
-          sh -n bootstrap.sh install.sh
-          npm ci
-          npm test
-          npm run build
-          npx playwright install --with-deps chromium
-          npm run test:browser
+      - name: Download current-revision Part 12 evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: kernel-policy-${{ github.sha }}
 
       - name: Download and verify pinned Updater
         env:
@@ -73,22 +72,24 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and smoke-test image
-        id: candidate
+      - name: Build, publish and smoke-test immutable candidate image
+        id: image
         shell: bash
         run: |
-          image="release-candidate-kernel:${GITHUB_SHA}"
-          docker buildx build --tag "$image" --load .
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          docker buildx build --tag "$image:candidate-${GITHUB_SHA}" --push \
+            --provenance=true --sbom=true --metadata-file image-metadata.json .
+          digest="$(jq -er '."containerimage.digest"' image-metadata.json)"
+          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+          candidate="$image@$digest"
+          docker pull "$candidate"
           docker run -d --name release-smoke-kernel \
             -e KERNEL_LISTEN_PORT=18180 \
             -e KERNEL_DATA_DIR=/tmp/kernel-data \
-            -e KERNEL_ADMIN_USERNAME=release-operator \
-            -e KERNEL_ADMIN_PASSWORD=release-test-password \
+            -e KERNEL_ACCESS_KEY=CHANGE_ME \
             -e KERNEL_SESSION_SECRET=release-test-session-secret-32-characters \
             -e KERNEL_SERVICE_TOKEN=release-test-token-24-characters \
-            -e VOLT_URL=http://127.0.0.1:18184 \
-            -e VOLT_KERNEL_TOKEN=release-test-kernel-to-volt-token-32-characters \
-            -e KERNEL_COOKIE_SECURE=false "$image"
+            -e KERNEL_COOKIE_SECURE=false "$candidate"
           trap 'docker rm -f release-smoke-kernel >/dev/null 2>&1 || true' EXIT
           for _ in {1..30}; do
             status="$(docker inspect --format '{{.State.Health.Status}}' release-smoke-kernel)"
@@ -97,30 +98,63 @@ jobs:
             sleep 2
           done
           [[ "$(docker inspect --format '{{.State.Health.Status}}' release-smoke-kernel)" == healthy ]]
-
-      - name: Publish immutable image
-        id: image
-        shell: bash
-        run: |
-          image="ghcr.io/${GITHUB_REPOSITORY,,}"
-          docker buildx build --tag "${image}:${{ steps.release.outputs.version }}" \
-            --tag "${image}:latest" --push --provenance=true --sbom=true \
-            --metadata-file image-metadata.json .
-          digest="$(jq -er '."containerimage.digest"' image-metadata.json)"
-          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
           echo "reference=$image" >> "$GITHUB_OUTPUT"
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
-      - name: Build release artifacts
+      - name: Qualify all pre-signing checks before granting signing access
+        run: |
+          python3 scripts/known-problems-gate.py --record helper-contract --command python3 scripts/test-helper-contract.py .release-inputs/updater
+          python3 scripts/known-problems-gate.py --phase pre-signing
+
+      - name: Preserve immutable candidate inputs and qualification
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kernel-prepared-${{ github.sha }}
+          path: |
+            .release-inputs/
+            .release-evidence/
+            known-problems-report.json
+          include-hidden-files: true
+          if-no-files-found: error
+
+  signing:
+    needs: prepare
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - uses: sigstore/cosign-installer@v3.10.1
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: kernel-prepared-${{ github.sha }}
+
+      - name: Revalidate pre-signing receipts
+        run: python3 scripts/known-problems-gate.py --phase pre-signing
+
+      - name: Build release artifacts from the tested image digest
         env:
-          IMAGE_REFERENCE: ${{ steps.image.outputs.reference }}
-          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          IMAGE_REFERENCE: ${{ needs.prepare.outputs.image }}
+          IMAGE_DIGEST: ${{ needs.prepare.outputs.digest }}
         shell: bash
         run: |
           updater_version="$(tr -d '[:space:]' < .release/updater.version)"
           UPDATER_BUNDLE_DIR="$PWD/.release-inputs/updater" \
           UPDATER_BUNDLE_VERSION="$updater_version" \
-            bash scripts/build-release.sh "${{ steps.release.outputs.version }}"
+            bash scripts/build-release.sh "${{ needs.prepare.outputs.version }}"
 
       - name: Sign trusted release manifest
         env:
@@ -128,9 +162,10 @@ jobs:
         shell: bash
         run: |
           node scripts/sign-release.mjs --export-public-key release-artifacts/kernel.pem release-artifacts/kernel-release.json
-          node scripts/build-bootstrap.mjs bootstrap.sh release-artifacts/kernel.pem release-artifacts/bootstrap.sh "${{ steps.release.outputs.version }}"
+          node scripts/build-bootstrap.mjs bootstrap.sh release-artifacts/kernel.pem release-artifacts/bootstrap.sh "${{ needs.prepare.outputs.version }}"
           sh -n release-artifacts/bootstrap.sh
           if grep -q '__KERNEL_BOOTSTRAP_' release-artifacts/bootstrap.sh; then exit 1; fi
+
       - name: Sign backward-compatible release artifacts
         shell: bash
         run: |
@@ -138,20 +173,40 @@ jobs:
             while IFS= read -r -d '' artifact; do
               cosign sign-blob --yes --bundle "${artifact}.sigstore.json" "$artifact"
             done
-
           cosign verify-blob \
             --bundle release-artifacts/kernel-release.json.sigstore.json \
             --certificate-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@${GITHUB_REF}" \
             --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
             release-artifacts/kernel-release.json
 
-      - uses: actions/attest-build-provenance@v3
-        with:
-          subject-path: "release-artifacts/*"
-      - name: Publish GitHub release
+      - name: Stage signed assets as a prerelease
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "$GITHUB_REF_NAME" release-artifacts/* \
-            --verify-tag --latest=false --generate-notes \
-            --title "Kernel ${{ steps.release.outputs.version }}"
+            --verify-tag --prerelease --latest=false --generate-notes \
+            --title "Kernel ${{ needs.prepare.outputs.version }}"
+
+      - name: Verify anonymous published assets and final trust
+        run: |
+          python3 scripts/known-problems-gate.py --record published-assets --command python3 scripts/verify-published-assets.py release-artifacts
+          python3 scripts/known-problems-gate.py --phase final
+          cp known-problems-report.json release-artifacts/known-problems-report.json
+
+      - uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: "release-artifacts/*"
+
+      - name: Attach qualification, promote image aliases and publish stable release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_REFERENCE: ${{ needs.prepare.outputs.image }}
+          IMAGE_DIGEST: ${{ needs.prepare.outputs.digest }}
+        shell: bash
+        run: |
+          gh release upload "$GITHUB_REF_NAME" release-artifacts/known-problems-report.json --clobber
+          docker buildx imagetools create \
+            --tag "$IMAGE_REFERENCE:${{ needs.prepare.outputs.version }}" \
+            --tag "$IMAGE_REFERENCE:latest" \
+            "$IMAGE_REFERENCE@$IMAGE_DIGEST"
+          gh release edit "$GITHUB_REF_NAME" --prerelease=false --latest=false

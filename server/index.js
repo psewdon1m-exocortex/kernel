@@ -6,6 +6,7 @@ import { validateRuntimeSecrets } from "./security.js";
 import fs from "node:fs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const configuredAccessKey = process.env.KERNEL_ACCESS_KEY;
 const voltKernelToken = process.env.VOLT_KERNEL_TOKEN_FILE
   ? fs.readFileSync(path.resolve(process.env.VOLT_KERNEL_TOKEN_FILE), "utf8").trim()
   : process.env.VOLT_KERNEL_TOKEN;
@@ -24,7 +25,9 @@ const config = {
   distDir: path.join(ROOT, "dist"),
   // KERNEL_ADMIN_PASSWORD remains a one-release compatibility alias for
   // installations prepared before the single Access Key migration.
-  accessKey: process.env.KERNEL_ACCESS_KEY ?? process.env.KERNEL_ADMIN_PASSWORD,
+  accessKey: configuredAccessKey !== undefined && configuredAccessKey !== ""
+    ? configuredAccessKey
+    : process.env.KERNEL_ADMIN_PASSWORD,
   legacyAdminUsername: process.env.KERNEL_ADMIN_USERNAME,
   sessionSecret: process.env.KERNEL_SESSION_SECRET,
   apiToken: process.env.KERNEL_SERVICE_TOKEN ?? process.env.KERNEL_API_TOKEN,
@@ -32,7 +35,7 @@ const config = {
   trustProxy: trustedProxies(process.env.KERNEL_TRUSTED_PROXIES),
   diskPath: process.env.KERNEL_DISK_PATH
     || (process.platform === "win32" ? path.parse(process.cwd()).root : "/"),
-  version: process.env.KERNEL_VERSION ?? "0.2.10",
+  version: process.env.KERNEL_VERSION ?? "0.2.11",
   auditMaxEntries: Number(process.env.KERNEL_AUDIT_MAX_ENTRIES ?? 10000),
   auditRetentionDays: Number(process.env.KERNEL_AUDIT_RETENTION_DAYS ?? 30),
   auditMaxBytes: Number(process.env.KERNEL_AUDIT_MAX_BYTES ?? 64 * 1024 * 1024),

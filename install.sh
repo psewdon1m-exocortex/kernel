@@ -149,8 +149,7 @@ validate_install() {
   fi
   public_url=$(get_env KERNEL_URL)
   image=$(get_env KERNEL_IMAGE)
-  case "$access_key" in ""|CHANGE_ME|change-*) echo "Set KERNEL_ACCESS_KEY in .env." >&2; exit 2 ;; esac
-  [ "${#access_key}" -ge 12 ] || { echo "KERNEL_ACCESS_KEY must contain at least 12 characters." >&2; exit 2; }
+  [ -n "$access_key" ] || { echo "Set KERNEL_ACCESS_KEY in .env." >&2; exit 2; }
   case "$public_url" in https://*.*) ;; *) echo "KERNEL_URL must be the public HTTPS URL." >&2; exit 2 ;; esac
   case "$public_url" in *CHANGE_ME*|*.example.com*) echo "Replace the example KERNEL_URL." >&2; exit 2 ;; esac
   printf '%s' "$image" | grep -Eq '^ghcr\.io/.+@sha256:[a-f0-9]{64}$' || {

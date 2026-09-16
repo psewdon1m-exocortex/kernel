@@ -145,7 +145,9 @@ export function validateRuntimeSecrets({
     typeof value !== "string"
     || /(?:change-this|replace-with|example-password)/i.test(value)
   );
-  const resolvedAccessKey = accessKey ?? adminPassword;
+  const resolvedAccessKey = typeof accessKey === "string" && accessKey !== ""
+    ? accessKey
+    : adminPassword;
   const resolvedLegacyUsername = legacyAdminUsername ?? adminUsername;
   if (
     resolvedLegacyUsername != null
@@ -154,8 +156,8 @@ export function validateRuntimeSecrets({
   ) {
     issues.push("deprecated KERNEL_ADMIN_USERNAME must contain 3-64 letters, numbers, dots, underscores or hyphens when present");
   }
-  if (typeof resolvedAccessKey !== "string" || resolvedAccessKey.length < 12 || isPlaceholder(resolvedAccessKey)) {
-    issues.push("KERNEL_ACCESS_KEY must contain at least 12 non-placeholder characters");
+  if (typeof resolvedAccessKey !== "string" || resolvedAccessKey.length === 0) {
+    issues.push("KERNEL_ACCESS_KEY must be explicitly set to a non-empty exact value");
   }
   if (typeof sessionSecret !== "string" || sessionSecret.length < 32 || isPlaceholder(sessionSecret)) {
     issues.push("KERNEL_SESSION_SECRET must contain at least 32 non-placeholder characters");

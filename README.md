@@ -22,9 +22,11 @@ Before a service-qualified release is finalized, evaluate every active ID in
 [Part 12](https://github.com/psewdon1m-exocortex/general/blob/main/PART_12_KNOWN_DEPLOYMENT_AND_OPERATIONS_PROBLEMS.md) against the exact candidate. Retain
 `known-problems-report.json` bound to the service revision, qualified tag,
 immutable central-documentation revision and catalog digest. Missing, stale,
-failed, unknown or unsupported `N/A` evidence blocks publication. This is a
-normative release requirement; until the repository workflow generates and
-enforces that report, the release pipeline remains an implementation gap.
+failed, unknown or unsupported `N/A` evidence blocks publication. CI records
+revision-bound unit, deployment and signed-bootstrap receipts. The release
+workflow revalidates them before exposing the signing secret, verifies staged
+assets anonymously, publishes the final report beside the release artifacts
+and only then promotes the stable release and image tags.
 
 ## Автоматические резервные копии
 
@@ -136,10 +138,10 @@ strength/entropy или denylist известных/example/placeholder знач
 login, смена ключа и restore должны передавать его без trim, нормализации,
 изменения регистра и усечения; ошибкой является только отсутствие настройки.
 
-> Расхождение реализации (2026-09-14): текущие installer, startup validation и
-> смена ключа требуют не менее 12 символов, отклоняют отдельные placeholder-
-> значения, а значит не соответствуют общему контракту `BST-13`. До исправления
-> кода и тестов это блокирует следующий production release.
+Kernel применяет этот контракт одинаково в installer, startup validation,
+login, смене ключа и Register bootstrap: непустое значение сохраняется и
+сравнивается побайтно без специальных ограничений. Архив восстановления не
+содержит verifier Access Key и поэтому не заменяет действующий ключ.
 
 Production Compose contains no reverse proxy and publishes Kernel only on VPS
 loopback. One shared host-level Nginx owns TCP 80/443 and routes the Kernel SNI
