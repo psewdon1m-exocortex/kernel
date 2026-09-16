@@ -49,7 +49,7 @@ const PRESENTATION_ORDERS = {
   navigation_order: ["dashboard", "overview", "topology", "register", "constitution", "settings"],
   dashboard_order: [
     "cpu", "ram", "disk", "uptime",
-    "service-kernel", "service-saturn", "service-volt",
+    "service-kernel", "service-saturn", "service-volt", "service-laboratory", "service-chronos",
   ],
   settings_order: ["appearance", "security", "backup", "updates", "logs", "documents"],
 };

@@ -191,7 +191,7 @@ export class KernelStore {
     ]));
     putSetting.run("dashboard_order", JSON.stringify([
       "cpu", "ram", "disk", "uptime",
-      "service-kernel", "service-saturn", "service-volt",
+      "service-kernel", "service-saturn", "service-volt", "service-laboratory", "service-chronos",
     ]));
     putSetting.run("settings_order", JSON.stringify([
       "appearance", "security", "backup", "updates", "logs", "documents",
@@ -458,7 +458,7 @@ export class KernelStore {
         ]),
         dashboard_order: readOrder("dashboard_order", [
           "cpu", "ram", "disk", "uptime",
-          "service-kernel", "service-saturn", "service-volt",
+          "service-kernel", "service-saturn", "service-volt", "service-laboratory", "service-chronos",
         ], true),
         settings_order: readOrder("settings_order", [
           "appearance", "security", "backup", "updates", "logs", "documents",

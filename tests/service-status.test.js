@@ -25,6 +25,9 @@ test("service collector reports successful readiness and liveness contracts as a
       if (url.pathname === "/api/v1/public/reachability") {
         return Response.json({ status: "ready" });
       }
+      if (url.pathname === "/api/public/reachability") {
+        return Response.json({ status: "available" });
+      }
       if (["/api/health", "/api/v1/health"].includes(url.pathname)) {
         return Response.json({ status: "ok" });
       }
@@ -34,12 +37,18 @@ test("service collector reports successful readiness and liveness contracts as a
   try {
     const snapshot = await collector.snapshot();
     assert.deepEqual(snapshot.services.map((service) => service.id), [
-      "kernel", "saturn", "volt",
+      "kernel", "saturn", "volt", "laboratory", "chronos",
     ]);
     assert.equal(snapshot.services.find((service) => service.id === "kernel").status, "available");
     assert.equal(snapshot.services.find((service) => service.id === "saturn").status, "available");
     assert.equal(snapshot.services.find((service) => service.id === "volt").status, "available");
     assert.equal(snapshot.services.find((service) => service.id === "volt").checks.readiness.level, "liveness");
+    assert.equal(snapshot.services.find((service) => service.id === "laboratory").status, "available");
+    assert.equal(snapshot.services.find((service) => service.id === "laboratory").checks.readiness.level, "readiness");
+    assert.ok(calls.includes("https://laboratory.services.test/api/health"));
+    assert.equal(snapshot.services.find((service) => service.id === "chronos").status, "available");
+    assert.equal(snapshot.services.find((service) => service.id === "chronos").checks.readiness.level, "readiness");
+    assert.ok(calls.includes("https://chronos.services.test/api/public/reachability"));
     assert.ok(calls.every((url) => !url.includes("neptune") && !url.includes("updater")));
     assert.ok(calls.every((url) => url.startsWith("https://")));
   } finally {
@@ -64,7 +73,7 @@ test("service collector refuses placeholder and local-address Register targets",
     const snapshot = await collector.snapshot();
     assert.equal(snapshot.services.find((service) => service.id === "kernel").status, "unconfigured");
     assert.equal(snapshot.services.find((service) => service.id === "saturn").status, "unconfigured");
-    assert.equal(calls, 2);
+    assert.equal(calls, 6);
   } finally {
     collector.close();
   }

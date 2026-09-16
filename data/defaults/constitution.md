@@ -201,7 +201,7 @@ Kernel НЕ ДОЛЖЕН:
 - Updater, Neptune и Gryphon являются общими host helpers и НЕ ДОЛЖНЫ присваивать authority main service.
 - Kernel владеет documents/references, Volt — actual values, Saturn — backup/sync intent и stored recovery objects.
 - Chronos, Perimetr, Pods, Laboratory, Mastermind, Agent и Library НЕ ВХОДЯТ автоматически в initial six-component profile. Их подключение требует versioned profile, Register migration и acceptance evidence.
-- Dashboard Kernel ДОЛЖЕН проверять только Kernel, Saturn и Volt; Neptune и Updater отображаются в профильных Settings states, а Gryphon — в consuming-service workflows.
+- Dashboard Kernel ДОЛЖЕН проверять Kernel, Saturn, Volt, зарегистрированные Laboratory и Chronos; Neptune и Updater отображаются в профильных Settings states, а Gryphon — в consuming-service workflows.
 
 ## 12. Bootstrap сервисов
 

@@ -7,6 +7,8 @@ export const SERVICE_STATUS_DEFINITIONS = [
   { id: "kernel", name: "KERNEL", healthPath: "/api/v1/health", contract: "private-readiness", localReady: true },
   { id: "saturn", name: "Saturn", healthPath: "/api/v1/public/reachability", contract: "public-readiness" },
   { id: "volt", name: "Volt", healthPath: "/api/v1/health", contract: "public-liveness" },
+  { id: "laboratory", name: "Laboratory", healthPath: "/api/health", contract: "public-readiness" },
+  { id: "chronos", name: "Chronos", healthPath: "/api/public/reachability", contract: "public-readiness" },
 ];
 
 function validPublicHostname(value) {

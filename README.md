@@ -87,7 +87,7 @@ bounded Kernel session protect every operator data/API route.
 
 Пассивный registry-сервис для одного VPS:
 
-- Dashboard с CPU, RAM, Disk, uptime текущего Kernel API-процесса и кэшированными статусами доступности Kernel, Saturn и Volt;
+- Dashboard с CPU, RAM, Disk, uptime текущего Kernel API-процесса и кэшированными статусами доступности Kernel, Saturn, Volt, Laboratory и Chronos;
 - versioned `overview.md` и `constitution.md`;
 - визуальная Topology Map на встроенном Excalidraw с серверным автосохранением и историей версий;
 - Register с immutable revisions, checksum и restore-as-new;
@@ -238,16 +238,35 @@ services.gryphon.sni
 services.gryphon.port
 ```
 
+Laboratory и Chronos остаются расширениями за пределами initial six-service
+profile. Для их карточек Dashboard в опубликованном Register должны
+присутствовать ссылки на значения Volt:
+
+```text
+services.laboratory.sni
+services.laboratory.port
+services.laboratory.health.path
+services.laboratory.health.contract
+services.chronos.sni
+services.chronos.port
+services.chronos.health.path
+services.chronos.health.contract
+```
+
 Поля `services.*.port` описывают клиентскую HTTPS-маршрутизацию, а не управляют
 локальными listener. Их меняют в конфигурации конкретного сервиса и общего
 server Nginx.
 
-Backend Dashboard проверяет Kernel, Saturn и Volt. Публичный SNI используется
+Backend Dashboard проверяет Kernel, Saturn, Volt, зарегистрированные Laboratory и Chronos. Публичный SNI используется
 для отдельной EDGE-проверки, а `health.path` — только для заранее разрешённого
 health-контракта. Saturn публикует краткий dependency-aware результат по
 `/api/v1/public/reachability`, не раскрывая детали зависимостей. Проверки имеют
 ограниченный timeout, запрещают redirects и не превращают произвольные Register
-URL в сетевые probes. Updater и Neptune не являются HTTP-сервисами, а публичная
+URL в сетевые probes. Laboratory использует публичный readiness-контракт
+`/api/health`; без `services.laboratory.sni`, `port`, `health.path` и
+`health.contract` его карточка явно показывает `UNCONFIGURED`. Chronos
+использует `/api/public/reachability`; его локальный `/api/health` намеренно не
+публикуется через Nginx. Updater и Neptune не являются HTTP-сервисами, а публичная
 поверхность Gryphon принимает только аутентифицированные Telegram webhooks,
 поэтому эти компоненты в Dashboard не проверяются.
 

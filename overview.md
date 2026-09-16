@@ -99,7 +99,7 @@ Kernel — справочный, нормативный и конфигурац�
 
 ### 4.1 Разделы интерфейса
 
-1. **Dashboard** — CPU, RAM, Disk, uptime процесса Kernel и доступность Kernel, Saturn и Volt.
+1. **Dashboard** — CPU, RAM, Disk, uptime процесса Kernel и доступность Kernel, Saturn, Volt, Laboratory и Chronos.
 2. **Overview** — этот документ.
 3. **Topology Map** — версионируемое визуальное полотно Excalidraw.
 4. **Register** — опубликованные ключи, содержащие только ссылки на значения Volt.
@@ -117,7 +117,7 @@ Topology Map в текущей версии использует Excalidraw и �
 
 ### 4.3 Dashboard availability
 
-Kernel показывает только сервисы, для которых профиль определяет реальную проверку: Kernel, Saturn и Volt. Neptune и Updater не проверяются карточками Dashboard; их локальное состояние отображается в соответствующих Settings-панелях. Статус разделяет liveness, readiness, unconfigured, degraded, stale и unavailable, а не сводит любой ответ `curl` к «доступен».
+Kernel показывает только сервисы, для которых определена реальная проверка: Kernel, Saturn, Volt, зарегистрированные Laboratory и Chronos. Laboratory проверяется через публичный readiness-контракт `/api/health`, Chronos — через `/api/public/reachability`, поскольку его `/api/health` остаётся локальным. Если четыре Register-привязки сервиса отсутствуют или не соответствуют контракту, карточка показывает `unconfigured`. Neptune и Updater не проверяются карточками Dashboard; их локальное состояние отображается в соответствующих Settings-панелях. Статус разделяет liveness, readiness, unconfigured, degraded, stale и unavailable, а не сводит любой ответ `curl` к «доступен».
 
 ---
 

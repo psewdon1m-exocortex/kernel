@@ -38,7 +38,7 @@ const DEFAULT_SETTINGS: UiSettings = {
     navigation_order: NAVIGATION.map((item) => item.id),
     dashboard_order: [
       "cpu", "ram", "disk", "uptime",
-      "service-kernel", "service-saturn", "service-volt",
+      "service-kernel", "service-saturn", "service-volt", "service-laboratory", "service-chronos",
     ],
     settings_order: ["appearance", "security", "backup", "updates", "logs", "documents"],
   },

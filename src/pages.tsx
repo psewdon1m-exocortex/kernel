@@ -232,6 +232,8 @@ const SERVICE_CARDS: Array<{ id: ServiceId; cardId: DashboardCardId; name: strin
   { id: "kernel", cardId: "service-kernel", name: "KERNEL" },
   { id: "saturn", cardId: "service-saturn", name: "Saturn" },
   { id: "volt", cardId: "service-volt", name: "Volt" },
+  { id: "laboratory", cardId: "service-laboratory", name: "Laboratory" },
+  { id: "chronos", cardId: "service-chronos", name: "Chronos" },
 ];
 
 interface DashboardCardInteractions {
