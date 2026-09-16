@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useId,
   useRef,
   useState,
   type FormEvent,
@@ -35,6 +36,66 @@ export function shortHash(value: string | null | undefined) {
   return value.replace(/^sha256:/, "").slice(0, 12);
 }
 
+export function CloseIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16" focusable="false">
+      <path d="M3 3l10 10M13 3L3 13" />
+    </svg>
+  );
+}
+
+export function SearchField({
+  value,
+  label,
+  placeholder,
+  onChange,
+}: {
+  value: string;
+  label: string;
+  placeholder: string;
+  onChange(value: string): void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const inputId = useId();
+  const clear = () => {
+    onChange("");
+    inputRef.current?.focus();
+  };
+
+  return (
+    <div className="search-field">
+      <label className="sr-only" htmlFor={inputId}>{label}</label>
+      <input
+        id={inputId}
+        ref={inputRef}
+        type="search"
+        value={value}
+        placeholder={placeholder}
+        aria-label={label}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && value) {
+            event.preventDefault();
+            clear();
+          }
+        }}
+      />
+      {value && (
+        <button
+          type="button"
+          className="search-clear"
+          aria-label="Clear search"
+          title="Clear search"
+          onPointerDown={(event) => event.preventDefault()}
+          onClick={clear}
+        >
+          <CloseIcon />
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function Notices({
   notices,
   dismiss,
@@ -53,7 +114,7 @@ export function Notices({
             title="Dismiss"
             onClick={() => dismiss(notice.id)}
           >
-            ×
+            <CloseIcon />
           </button>
         </div>
       ))}
@@ -177,7 +238,7 @@ export function Modal({
             title="Close"
             onClick={onClose}
           >
-            ×
+            <CloseIcon />
           </button>
         </header>
         <div className="dialog-body">{children}</div>

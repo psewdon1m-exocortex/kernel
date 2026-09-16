@@ -230,7 +230,7 @@ export function App() {
       </aside>
 
       <main className={`main-content view-${view}`}>
-        <header className="page-title"><h1>{pageLabel}</h1></header>
+        <header className="page-title"><h1>{pageLabel?.toLocaleLowerCase("en-US")}</h1></header>
         <div className="page-surface">
           {view === "dashboard" && <DashboardPage settings={settings} onSettings={persistSettings} notify={notify} />}
           {view === "overview" && <DocumentPage type="overview" />}

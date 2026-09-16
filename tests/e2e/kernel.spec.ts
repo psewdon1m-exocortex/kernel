@@ -18,7 +18,7 @@ test.beforeEach(async ({ page }) => {
   await expect(accessKey).toHaveCSS("outline-color", "rgb(0, 168, 255)");
   await accessKey.fill("browser-test-access-key");
   await accessKey.press("Enter");
-  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+  await expect(page.locator(".page-title h1")).toHaveText("dashboard");
 });
 
 test("operator can navigate every Kernel section", async ({ page }) => {
@@ -61,7 +61,7 @@ test("operator can navigate every Kernel section", async ({ page }) => {
   [expectedOrder[cpuIndex], expectedOrder[uptimeIndex]] = [expectedOrder[uptimeIndex], expectedOrder[cpuIndex]];
   expect(movedOrder).toEqual(expectedOrder);
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+  await expect(page.locator(".page-title h1")).toHaveText("dashboard");
   const restoredOrder = await page.locator("[data-dashboard-node]").evaluateAll(
     (nodes) => nodes.map((node) => node.getAttribute("data-dashboard-node")),
   );
@@ -91,19 +91,38 @@ test("operator can navigate every Kernel section", async ({ page }) => {
   expect(serviceCards[1]).toMatchObject({ y: 543, height: 166 });
 
   await navigate(page, "Overview");
+  await expect(page.locator(".page-title h1")).toHaveText("overview");
   await expect(page.getByRole("heading", { name: "EXOCORTEX", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "6. Volt 0.1.5", exact: true })).toBeVisible();
 
   await navigate(page, "Constitution");
+  await expect(page.locator(".page-title h1")).toHaveText("constitution");
   await expect(
     page.getByRole("article").getByRole("heading", { name: "EXOCORTEX CONSTITUTION", exact: true }),
   ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "11.1 Текущий coordinated profile", exact: true })).toBeVisible();
 
   await navigate(page, "Register");
+  await expect(page.locator(".page-title h1")).toHaveText("register");
+  await expect(page.locator(".nav-item > span").filter({ hasText: /^Register$/ })).toHaveText("Register");
+  const registerSearch = page.getByRole("searchbox", { name: "Search Register" });
+  const searchFieldBox = await page.locator(".register-toolbar .search-field").boundingBox();
+  const searchInputBox = await registerSearch.boundingBox();
+  expect((searchInputBox?.x ?? 0) - (searchFieldBox?.x ?? 0)).toBeCloseTo(1, 0);
+  await expect(registerSearch).toHaveCSS("padding-left", "12px");
+  await registerSearch.fill("services.kernel.sni");
+  const clearRegisterSearch = page.locator(".register-toolbar").getByRole("button", { name: "Clear search" });
+  await expect(clearRegisterSearch).toBeVisible();
+  await clearRegisterSearch.click();
+  await expect(registerSearch).toHaveValue("");
+  await expect(registerSearch).toBeFocused();
+  await expect(clearRegisterSearch).toHaveCount(0);
   await expect(page.getByText("services.kernel.sni", { exact: true })).toBeVisible();
   await expect(page.getByText("services.kernel.port", { exact: true })).toBeVisible();
   await expect(page.getByText("services.saturn.port", { exact: true })).toBeVisible();
 
   await navigate(page, "Settings");
+  await expect(page.locator(".page-title h1")).toHaveText("settings");
   for (const name of ["Appearance", "Security", "Backup", "Updates", "Logs", "Documents"]) {
     await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
   }
@@ -140,7 +159,8 @@ test("operator can navigate every Kernel section", async ({ page }) => {
   await expect(updatesSection.getByRole("button", { name: "Check Updater for updates" })).toBeVisible();
 
   await navigate(page, "Documentation");
-  await expect(page.getByText("Kernel / Operator Guide", { exact: true })).toBeVisible();
+  await expect(page.locator(".page-title h1")).toHaveText("documentation");
+  await expect(page.getByText("Kernel 0.2.10 / Operator Guide", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Welcome To Kernel" })).toBeVisible();
   const documentationSearch = page.getByLabel("Search documentation");
   await documentationSearch.fill("last-known-good");
@@ -148,6 +168,86 @@ test("operator can navigate every Kernel section", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Installation", exact: true })).toHaveCount(0);
   await documentationSearch.fill("no-such-kernel-topic");
   await expect(page.getByText("No documentation sections match this search.")).toBeVisible();
+  const clearDocumentationSearch = page.locator(".documentation-nav").getByRole("button", { name: "Clear search" });
+  await clearDocumentationSearch.click();
+  await expect(documentationSearch).toHaveValue("");
+  await expect(documentationSearch).toBeFocused();
+});
+
+test("Documentation follows the bounded two-scroll-region contract", async ({ page }) => {
+  await page.setViewportSize({ width: 1919, height: 1034 });
+  await navigate(page, "Documentation");
+
+  const workspace = page.locator(".documentation-page");
+  const navigation = page.getByLabel("Documentation navigation");
+  const article = page.getByRole("region", { name: "Kernel operator guide" });
+  const workspaceBox = await workspace.boundingBox();
+  const navigationBox = await navigation.boundingBox();
+  const articleBox = await article.boundingBox();
+
+  expect(workspaceBox).toMatchObject({ x: 280, y: 151, height: 843 });
+  expect(Math.abs((workspaceBox?.width ?? 0) - 1610)).toBeLessThanOrEqual(1);
+  expect(navigationBox?.width).toBeCloseTo(220, 0);
+  expect(navigationBox?.height).toBeCloseTo(843, 0);
+  expect(articleBox?.width).toBeCloseTo(1120, 0);
+  expect(articleBox?.height).toBeCloseTo(843, 0);
+  await expect(navigation).toHaveCSS("overflow-y", "auto");
+  await expect(article).toHaveCSS("overflow-y", "auto");
+  await expect(navigation).toHaveCSS("overscroll-behavior-y", "contain");
+  await expect(article).toHaveCSS("overscroll-behavior-y", "contain");
+
+  const initialOffsets = await page.evaluate(() => ({
+    page: window.scrollY,
+    navigation: document.querySelector<HTMLElement>(".documentation-nav")?.scrollTop ?? -1,
+  }));
+  await page.getByRole("button", { name: "Topology Map", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Topology Map", exact: true })).toHaveAttribute("aria-current", "location");
+  await expect.poll(async () => article.evaluate((owner) => owner.scrollTop)).toBeGreaterThan(0);
+  await expect.poll(async () => page.evaluate(() => {
+    const owner = document.querySelector<HTMLElement>(".documentation-content");
+    const target = document.getElementById("docs-topology");
+    if (!owner || !target) return Number.POSITIVE_INFINITY;
+    return Math.abs(target.getBoundingClientRect().top - owner.getBoundingClientRect().top - 30);
+  })).toBeLessThanOrEqual(2);
+  expect(await page.evaluate(() => window.scrollY)).toBe(initialOffsets.page);
+  expect(await navigation.evaluate((owner) => owner.scrollTop)).toBe(initialOffsets.navigation);
+
+  const search = page.getByRole("searchbox", { name: "Search documentation" });
+  await search.fill("access key");
+  expect(await article.evaluate((owner) => owner.scrollTop)).toBe(0);
+  await expect(page.getByRole("heading", { name: "Installation", exact: true })).toBeVisible();
+  await search.fill("no-such-kernel-topic");
+  await expect(page.locator(".documentation-nav-group")).toHaveCount(0);
+  await expect(page.getByRole("status")).toHaveText("No documentation sections match this search.");
+  await page.getByRole("button", { name: "Clear search" }).click();
+  await expect(page.locator(".documentation-nav-group")).toHaveCount(3);
+  await expect(search).toBeFocused();
+
+  const desktopOverflow = await page.evaluate(() => ({
+    pageScrollHeight: document.scrollingElement?.scrollHeight ?? 0,
+    pageClientHeight: document.scrollingElement?.clientHeight ?? 0,
+  }));
+  expect(desktopOverflow.pageScrollHeight).toBeLessThanOrEqual(desktopOverflow.pageClientHeight + 1);
+
+  await page.setViewportSize({ width: 720, height: 900 });
+  await page.waitForTimeout(250);
+  const compactWorkspaceBox = await workspace.boundingBox();
+  const compactNavigationBox = await navigation.boundingBox();
+  const compactArticleBox = await article.boundingBox();
+  expect(compactWorkspaceBox).toMatchObject({ x: 20, y: 116, height: 764 });
+  expect(compactNavigationBox?.height).toBeGreaterThanOrEqual(150);
+  expect((compactArticleBox?.y ?? 0)).toBeGreaterThan((compactNavigationBox?.y ?? 0) + (compactNavigationBox?.height ?? 0));
+
+  const articleOffsetBeforeNavigationScroll = await article.evaluate((owner) => owner.scrollTop);
+  const navigationOffset = await navigation.evaluate((owner) => {
+    owner.scrollTop = owner.scrollHeight;
+    return owner.scrollTop;
+  });
+  expect(navigationOffset).toBeGreaterThan(0);
+  expect(await article.evaluate((owner) => owner.scrollTop)).toBe(articleOffsetBeforeNavigationScroll);
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  const compactWidth = await page.evaluate(() => ({ body: document.body.scrollWidth, viewport: window.innerWidth }));
+  expect(compactWidth.body).toBeLessThanOrEqual(compactWidth.viewport + 1);
 });
 
 test("Register can add, remove and restore an immutable revision", async ({ page }) => {

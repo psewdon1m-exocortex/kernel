@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -31,4 +31,47 @@ test("clean recovery preserves identities, histories, personalization and Volt b
     assert.equal(JSON.stringify(target.exportBackup().authoritative), before);
     assert.equal(JSON.stringify(backup).includes("audit-only-verifier"), false);
   } finally { stores.forEach((store) => store.close()); rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("bundled documents advance untouched installations without replacing operator revisions", () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "kernel-documents-"));
+  const defaultsDir = path.join(directory, "defaults");
+  const dataDir = path.join(directory, "data");
+  const stores = [];
+  try {
+    cpSync(path.resolve("data/defaults"), defaultsDir, { recursive: true });
+    writeFileSync(path.join(defaultsDir, "overview.md"), "# Previous Overview\n", "utf8");
+    writeFileSync(path.join(defaultsDir, "constitution.md"), "# Previous Constitution\n", "utf8");
+    const open = () => {
+      const store = new KernelStore({ dataDir, defaultsDir, initialPasswordHash: "audit-only-verifier" });
+      stores.push(store);
+      return store;
+    };
+
+    const previous = open();
+    const previousOverview = previous.getDocument("overview");
+    previous.close();
+    stores.pop();
+
+    const currentOverview = readFileSync(path.resolve("data/defaults/overview.md"), "utf8");
+    const currentConstitution = readFileSync(path.resolve("data/defaults/constitution.md"), "utf8");
+    writeFileSync(path.join(defaultsDir, "overview.md"), currentOverview, "utf8");
+    writeFileSync(path.join(defaultsDir, "constitution.md"), currentConstitution, "utf8");
+    const migrated = open();
+    assert.equal(migrated.getDocument("overview").content, currentOverview);
+    assert.equal(migrated.getDocument("overview").reason, "bundled-update");
+    assert.equal(migrated.getDocument("overview").source_revision, previousOverview.revision);
+    assert.equal(migrated.getDocument("constitution").content, currentConstitution);
+    migrated.createDocumentRevision("overview", "# Operator Overview\n", "operator", "upload");
+    migrated.close();
+    stores.pop();
+
+    writeFileSync(path.join(defaultsDir, "overview.md"), "# Future Bundled Overview\n", "utf8");
+    const preserved = open();
+    assert.equal(preserved.getDocument("overview").content, "# Operator Overview\n");
+    assert.equal(preserved.getDocument("overview").reason, "upload");
+  } finally {
+    stores.forEach((store) => store.close());
+    rmSync(directory, { recursive: true, force: true });
+  }
 });

@@ -1,9 +1,19 @@
-import { isValidElement, useMemo, useState, type ReactNode } from "react";
+import {
+  isValidElement,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type UIEvent,
+} from "react";
+import { SearchField } from "./components";
 
 interface DocumentationSection {
   id: string;
   group: "Get Started" | "Operate" | "Maintain";
   title: string;
+  summary: string;
   search: string;
   content: ReactNode;
 }
@@ -13,11 +23,12 @@ const SECTIONS: DocumentationSection[] = [
     id: "docs-introduction",
     group: "Get Started",
     title: "Introduction",
+    summary: "Kernel's role, trust boundaries, and availability behavior inside one Exocortex VPS.",
     search: "purpose passive kernel architecture one vps internal services volt references resolved memory unavailable last-known-good",
     content: (
       <>
         <p>Kernel is the configuration and governance service for one Exocortex VPS. It accepts requests from authenticated operators and internal services and returns versioned data. Its only routine outbound requests are bounded update discovery and allow-listed Dashboard availability probes declared through Register.</p>
-        <div className="documentation-note">Register publishes only Volt references. Consumers resolve them through Kernel and keep actual values in memory; a fresh start requires both Kernel and Volt to be available.</div>
+        <div className="documentation-note"><strong>Availability rule.</strong> Register publishes only Volt references. Consumers resolve them through Kernel and keep actual values in memory; a fresh start requires both Kernel and Volt to be available. Kernel does not persist or serve last-known-good resolved values.</div>
       </>
     ),
   },
@@ -25,6 +36,7 @@ const SECTIONS: DocumentationSection[] = [
     id: "docs-requirements",
     group: "Get Started",
     title: "System Requirements",
+    summary: "Host, reverse-proxy, storage, and browser prerequisites for a supported deployment.",
     search: "requirements docker compose nginx https tls cpu ram disk ports",
     content: (
       <>
@@ -42,6 +54,7 @@ const SECTIONS: DocumentationSection[] = [
     id: "docs-installation",
     group: "Get Started",
     title: "Installation",
+    summary: "Configure the runtime, start Kernel, and verify the private listener and public route.",
     search: "installation env docker compose nginx access key token",
     content: (
       <>
@@ -60,13 +73,14 @@ docker compose ps`}</pre>
     id: "docs-first-run",
     group: "Get Started",
     title: "First Run",
+    summary: "The minimum operator checklist before Kernel is used as an authoritative service.",
     search: "first run appearance credentials register backup documents",
     content: (
       <ol>
         <li>Sign in with the Access Key from the environment.</li>
         <li>Confirm the accent color and Sidebar behavior in Settings. Black, white, success, and danger colors are fixed.</li>
         <li>Create every actual value in Volt, copy its <code>volt://entry-id/value-position</code> reference, and assign that reference to the matching Register key.</li>
-        <li>Upload the current Overview and Constitution from the local device.</li>
+        <li>Review the bundled Overview and Constitution. Upload a local revision only when the deployment intentionally maintains an operator-specific document.</li>
         <li>Create and download a complete backup before production use.</li>
       </ol>
     ),
@@ -75,11 +89,12 @@ docker compose ps`}</pre>
     id: "docs-documents",
     group: "Operate",
     title: "Documents",
+    summary: "How bundled and operator-managed Overview and Constitution revisions advance.",
     search: "overview constitution markdown upload revision history restore device",
     content: (
       <>
-        <p>Overview and Constitution are human-readable Markdown documents. The active revision is rendered in its page; changes are accepted only through a file upload from the operator device.</p>
-        <p>Every upload and restore creates a new immutable revision. Restore never overwrites historical content.</p>
+        <p>Overview and Constitution are human-readable Markdown documents. A Kernel release advances an untouched bundled document as a new immutable revision, while an operator-uploaded active revision is preserved.</p>
+        <p>Every bundled update, upload and restore creates a new immutable revision. Restore never overwrites historical content.</p>
       </>
     ),
   },
@@ -87,17 +102,20 @@ docker compose ps`}</pre>
     id: "docs-register",
     group: "Operate",
     title: "Register",
+    summary: "Versioned configuration references, consumer reads, and failure behavior.",
     search: "register key value snapshot etag checksum revision 304 service token",
     content: (
       <>
         <p>Register stores the names and topology of shared configuration, but every stored value is a strict <code>volt://entry-id/value-position</code> reference. Positions are 1-based and follow the current value order in Volt. The referenced value may be marked open or secret in Volt; Kernel resolves both kinds through the same broker path and never persists the resolved result.</p>
-        <table className="documentation-table">
-          <thead><tr><th>Consumer</th><th>Request behavior</th><th>Failure behavior</th></tr></thead>
-          <tbody>
-            <tr><td>Operator</td><td>Reads and edits entries through the web interface.</td><td>The UI reports the request error and preserves entered values.</td></tr>
-            <tr><td>Internal service</td><td>Reads a reference snapshot, then batch-resolves the keys it needs with the service token.</td><td>May keep an already resolved value in memory, but cannot resolve a fresh process without Kernel and Volt.</td></tr>
-          </tbody>
-        </table>
+        <div className="documentation-table-scroll" tabIndex={0} aria-label="Register consumer behavior table">
+          <table className="documentation-table">
+            <thead><tr><th>Consumer</th><th>Request behavior</th><th>Failure behavior</th></tr></thead>
+            <tbody>
+              <tr><td>Operator</td><td>Reads and edits entries through the web interface.</td><td>The UI reports the request error and preserves entered values.</td></tr>
+              <tr><td>Internal service</td><td>Reads a reference snapshot, then batch-resolves the keys it needs with the service token.</td><td>May keep an already resolved value in memory, but cannot resolve a fresh process without Kernel and Volt.</td></tr>
+            </tbody>
+          </table>
+        </div>
         <p>A successful edit publishes a new Register revision. A conditional request returns <code>304 Not Modified</code> when the revision has not changed.</p>
       </>
     ),
@@ -106,6 +124,7 @@ docker compose ps`}</pre>
     id: "docs-topology",
     group: "Operate",
     title: "Topology Map",
+    summary: "The Excalidraw architecture workspace, its persistence, and its non-operational boundary.",
     search: "topology map excalidraw conceptual visual canvas shapes arrows text import export save",
     content: (
       <>
@@ -124,10 +143,11 @@ docker compose ps`}</pre>
     id: "docs-machine",
     group: "Operate",
     title: "Machine And Service Access",
+    summary: "Operator telemetry and the read-only authentication contract for internal services.",
     search: "dashboard metrics cpu ram disk uptime api service authentication",
     content: (
       <>
-        <p>Dashboard reads local VPS CPU, RAM, disk, and system uptime. These metrics remain operator-only and are not part of the Register snapshot.</p>
+        <p>Dashboard reads local CPU, RAM, the filesystem containing Kernel data, and the monotonic uptime of the current Kernel API process. These metrics remain operator-only and are not part of the Register snapshot.</p>
         <p>Internal services authenticate with the shared service token and receive read-only published data. Operator endpoints require the browser session and never accept the service token as a substitute.</p>
       </>
     ),
@@ -136,6 +156,7 @@ docker compose ps`}</pre>
     id: "docs-settings",
     group: "Maintain",
     title: "Settings",
+    summary: "The purpose and ownership boundary of every Kernel Settings section.",
     search: "settings appearance sidebar documents backup updater logger security",
     content: (
       <ul>
@@ -152,6 +173,7 @@ docker compose ps`}</pre>
     id: "docs-backup",
     group: "Maintain",
     title: "Backup And Restore",
+    summary: "Create, inspect, restore, and centrally schedule protected Kernel snapshots.",
     search: "backup archive zip download restore recovery revision database",
     content: (
       <>
@@ -165,6 +187,7 @@ docker compose ps`}</pre>
     id: "docs-api",
     group: "Maintain",
     title: "API And Logger",
+    summary: "Bounded audit visibility, archive export, and internal-service request evidence.",
     search: "api logger audit retention zip errors json manifest request 304",
     content: (
       <>
@@ -177,6 +200,7 @@ docker compose ps`}</pre>
     id: "docs-troubleshooting",
     group: "Maintain",
     title: "Troubleshooting",
+    summary: "First checks for startup, authorization, and revision-refresh failures.",
     search: "troubleshooting unavailable 401 403 stale last known good logs health",
     content: (
       <>
@@ -203,59 +227,125 @@ function documentationText(node: ReactNode): string {
 
 export function DocumentationPage() {
   const [query, setQuery] = useState("");
+  const [activeSectionId, setActiveSectionId] = useState(SECTIONS[0].id);
+  const navigationRef = useRef<HTMLElement>(null);
+  const articleRef = useRef<HTMLDivElement>(null);
   const normalizedQuery = query.trim().toLocaleLowerCase();
-  const visibleIds = useMemo(() => new Set(
+  const visibleSections = useMemo(() => (
     SECTIONS
       .filter((section) => (
         !normalizedQuery
-        || `${section.title} ${section.search} ${documentationText(section.content)}`
+        || `${section.title} ${section.summary} ${section.search} ${documentationText(section.content)}`
           .toLocaleLowerCase()
           .includes(normalizedQuery)
       ))
-      .map((section) => section.id),
   ), [normalizedQuery]);
+  const visibleIds = useMemo(
+    () => new Set(visibleSections.map((section) => section.id)),
+    [visibleSections],
+  );
+
+  useLayoutEffect(() => {
+    const article = articleRef.current;
+    const navigation = navigationRef.current;
+    article?.scrollTo({ top: 0, behavior: "auto" });
+    if (navigation) {
+      navigation.scrollTop = Math.min(
+        navigation.scrollTop,
+        Math.max(0, navigation.scrollHeight - navigation.clientHeight),
+      );
+    }
+    setActiveSectionId((current) => (
+      visibleIds.has(current) ? current : (visibleSections[0]?.id ?? "")
+    ));
+  }, [normalizedQuery, visibleIds, visibleSections]);
+
+  const updateQuery = (value: string) => {
+    articleRef.current?.scrollTo({ top: 0, behavior: "auto" });
+    setQuery(value);
+  };
+
+  const navigateToSection = (sectionId: string) => {
+    const owner = articleRef.current;
+    const target = document.getElementById(sectionId);
+    if (!owner || !target) return;
+    const targetTop = target.getBoundingClientRect().top
+      - owner.getBoundingClientRect().top
+      + owner.scrollTop
+      - 30;
+    owner.scrollTo({
+      top: Math.max(0, targetTop),
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+    });
+    setActiveSectionId(sectionId);
+  };
+
+  const updateActiveSection = (event: UIEvent<HTMLDivElement>) => {
+    if (!visibleSections.length) return;
+    const ownerTop = event.currentTarget.getBoundingClientRect().top;
+    let nextId = visibleSections[0].id;
+    for (const section of visibleSections) {
+      const target = document.getElementById(section.id);
+      if (!target || target.getBoundingClientRect().top > ownerTop + 31) break;
+      nextId = section.id;
+    }
+    setActiveSectionId((current) => current === nextId ? current : nextId);
+  };
 
   return (
     <div className="documentation-page">
-      <aside className="documentation-nav">
+      <aside ref={navigationRef} className="documentation-nav" aria-label="Documentation navigation">
         <div className="documentation-nav-inner">
-          <input
+          <SearchField
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            type="search"
             placeholder="Search documentation"
-            aria-label="Search documentation"
+            label="Search documentation"
+            onChange={updateQuery}
           />
-          {GROUPS.map((group) => (
-            <div className="documentation-nav-group" key={group}>
-              <strong>{group}</strong>
-              {SECTIONS.filter((section) => section.group === group && visibleIds.has(section.id)).map((section) => (
+          {GROUPS.map((group) => {
+            const groupSections = visibleSections.filter((section) => section.group === group);
+            if (!groupSections.length) return null;
+            return (
+              <div className="documentation-nav-group" key={group}>
+                <strong>{group}</strong>
+                {groupSections.map((section) => (
                 <button
                   type="button"
-                  className="documentation-link"
-                  onClick={() => document.getElementById(section.id)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                  className={`documentation-link ${activeSectionId === section.id ? "is-current" : ""}`}
+                  aria-controls={section.id}
+                  aria-current={activeSectionId === section.id ? "location" : undefined}
+                  onClick={() => navigateToSection(section.id)}
                   key={section.id}
                 >
                   {section.title}
                 </button>
-              ))}
-            </div>
-          ))}
+                ))}
+              </div>
+            );
+          })}
         </div>
       </aside>
-      <div className="documentation-content">
+      <div
+        ref={articleRef}
+        className="documentation-content"
+        role="region"
+        aria-label="Kernel operator guide"
+        tabIndex={0}
+        onScroll={updateActiveSection}
+      >
         <header>
-          <span className="documentation-kicker">Kernel / Operator Guide</span>
+          <span className="documentation-kicker">Kernel 0.2.10 / Operator Guide</span>
           <h2>Welcome To Kernel</h2>
           <p>A practical guide to installing, configuring, operating, backing up, and diagnosing the passive Exocortex registry.</p>
         </header>
-        {SECTIONS.filter((section) => visibleIds.has(section.id)).map((section) => (
-          <article id={section.id} data-doc-title={`${section.title} ${section.search}`} key={section.id}>
-            <h2>{section.title}</h2>
+        {visibleSections.map((section) => (
+          <article id={section.id} aria-labelledby={`${section.id}-title`} data-doc-title={`${section.title} ${section.summary} ${section.search}`} key={section.id}>
+            <h2 id={`${section.id}-title`}>{section.title}</h2>
+            <p className="documentation-summary">{section.summary}</p>
             {section.content}
           </article>
         ))}
-        {visibleIds.size === 0 && <div className="documentation-empty">No documentation sections match this search.</div>}
+        {visibleSections.length === 0 && <div className="documentation-empty" role="status">No documentation sections match this search.</div>}
       </div>
     </div>
   );

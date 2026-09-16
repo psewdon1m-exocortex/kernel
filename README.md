@@ -85,7 +85,7 @@ bounded Kernel session protect every operator data/API route.
 
 Пассивный registry-сервис для одного VPS:
 
-- Dashboard с CPU, RAM, Disk, system uptime и кэшированными статусами доступности KERNEL, Chronos, Perimetr, Saturn, Laboratory и Volt;
+- Dashboard с CPU, RAM, Disk, uptime текущего Kernel API-процесса и кэшированными статусами доступности Kernel, Saturn и Volt;
 - versioned `overview.md` и `constitution.md`;
 - визуальная Topology Map на встроенном Excalidraw с серверным автосохранением и историей версий;
 - Register с immutable revisions, checksum и restore-as-new;
@@ -252,9 +252,11 @@ URL в сетевые probes. Updater и Neptune не являются HTTP-се
 ## Данные и документы
 
 Состояние хранится в `data/kernel.sqlite`; Docker использует persistent volume.
-Overview и Constitution изменяются только загрузкой `overview.md` и
-`constitution.md` с устройства. Upload и restore создают новую immutable
-revision.
+Overview и Constitution поставляются как versioned bundled documents. При
+обновлении Kernel нетронутая bundled revision автоматически продвигается новой
+immutable revision; существующий operator upload никогда не перезаписывается.
+Явный upload `overview.md`/`constitution.md` и restore также создают новые
+immutable revisions.
 
 Register запрещает любые реальные значения и любые ссылки, кроме строгого
 формата `volt://<entry-id>/<value-position>`. Все ключи конфигурации, например

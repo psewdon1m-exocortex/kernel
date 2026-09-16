@@ -82,6 +82,7 @@ export class KernelStore {
     this.#ensureColumn("topology_revisions", "source_revision", "TEXT");
     this.#normalizeRegisterSnapshots();
     this.#seed(initialPasswordHash);
+    this.#ensureBundledDocuments();
     this.#ensureLaboratoryRegisterEntries();
     this.#ensureVoltRegisterEntries();
     this.#retireVoltResolvePath();
@@ -249,6 +250,32 @@ export class KernelStore {
     if (!setting.get("admin_password_hash")) {
       throw new Error("Kernel password initialization failed");
     }
+  }
+
+  #ensureBundledDocuments() {
+    this.transaction(() => {
+      for (const type of ["overview", "constitution"]) {
+        const settingKey = `bundled_document.${type}.checksum`;
+        const recordedChecksum = this.getSetting(settingKey);
+        const content = fs.readFileSync(path.join(this.defaultsDir, `${type}.md`), "utf8");
+        const bundledChecksum = hashContent(content);
+        const current = this.db.prepare(`
+          SELECT revision, checksum, actor, reason
+          FROM document_revisions
+          WHERE document_type = ?
+          ORDER BY id DESC LIMIT 1
+        `).get(type);
+        const isLegacyUntouched = recordedChecksum === null
+          && current?.actor === "system"
+          && current?.reason === "initial";
+        const isTrackedUntouched = recordedChecksum !== null
+          && current?.checksum === recordedChecksum;
+        if (current?.checksum !== bundledChecksum && (isLegacyUntouched || isTrackedUntouched)) {
+          this.createDocumentRevision(type, content, "system", "bundled-update", current.revision);
+        }
+        this.setSetting(settingKey, bundledChecksum);
+      }
+    });
   }
 
   #ensureLaboratoryRegisterEntries() {

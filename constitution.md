@@ -4,7 +4,9 @@ This document specializes [Part 00 — system unification specification](https:/
 
 > **Статус документа:** главный нормативный документ системы Exocortex.  
 > **Область действия:** все сервисы, клиенты, агенты, хранилища, интеграции и будущие нейросетевые компоненты Exocortex.  
-> **Актуальность:** 26 июля 2026 года.
+> **Актуальность:** 16 сентября 2026 года.
+>
+> **Проверенный профиль:** Kernel, Volt, Saturn, Updater, Neptune и Gryphon; остальные модули подключаются только через отдельный утверждённый профиль.
 
 ---
 
@@ -57,15 +59,24 @@ Constitution определяет обязательные принципы, о�
 
 **Audit Event** — запись о значимом действии или изменении.
 
+**Access Key** — явно заданное оператором точное непрозрачное значение для открытия или аутентификации; это не password-policy объект.
+
+**Register Reference** — точная ссылка `volt://<entry-uuid>/<value-position>` на authority-значение Volt.
+
+**Main Service** — операторское приложение со своим доменным состоянием: в текущем профиле Kernel, Volt или Saturn.
+
+**Host Helper** — общий локальный компонент с узкими полномочиями: Updater, Neptune или Gryphon.
+
 ---
 
 ## 3. Иерархия правил
 
-1. Constitution имеет высший нормативный приоритет внутри Exocortex.
-2. Общесистемные политики должны соответствовать Constitution.
-3. Политики конкретного модуля могут быть строже, но не могут ослаблять общие запреты без явно утверждённого исключения.
-4. Техническая реализация не может считаться основанием для игнорирования правила.
-5. Временное исключение должно быть документировано, ограничено по времени и иметь владельца.
+1. Явное решение Owner и текущий центральный комплект `.docs` определяют общесистемный контракт и порядок разрешения material divergence.
+2. Constitution специализирует этот контракт для Exocortex и имеет высший нормативный приоритет среди локальных документов Kernel.
+3. Профильная центральная Part имеет приоритет над более старым или конфликтующим текстом этой Constitution; расхождение должно быть явно зафиксировано и устранено.
+4. Политики конкретного модуля могут быть строже, но не могут ослаблять общие запреты без явно утверждённого исключения.
+5. Техническая реализация не может считаться основанием для игнорирования правила.
+6. Временное исключение должно быть документировано, ограничено по времени и иметь владельца.
 
 ---
 
@@ -168,30 +179,42 @@ Kernel ДОЛЖЕН:
 - хранить опубликованный Register;
 - отображать человекочитаемую Topology Map;
 - версионировать свои документы и конфигурацию;
-- предоставлять read-only машинный доступ разрешённым сервисам.
+- предоставлять versioned read-only machine API для Register и Constitution;
+- разрешать опубликованные Register references через Volt от своего имени;
+- хранить только verifier/token ciphertext, необходимые для собственных локальных trust boundaries.
 
 Kernel НЕ ДОЛЖЕН:
 
 - выполнять команды за другие сервисы;
 - быть API gateway всей системы;
 - хранить пользовательские файлы и секреты;
+- сохранять resolved plaintext значений Register;
+- раскрывать Kernel-to-Volt token потребителям;
 - проксировать обычный рабочий трафик;
 - участвовать в каждом runtime-действии;
 - становиться единственной точкой отказа для уже настроенных сервисов;
 - использовать Topology Map как скрытый исполняемый манифест.
 
+### 11.1 Текущий coordinated profile
+
+- Kernel, Volt и Saturn являются main services со своими независимыми releases, данными и operator sessions.
+- Updater, Neptune и Gryphon являются общими host helpers и НЕ ДОЛЖНЫ присваивать authority main service.
+- Kernel владеет documents/references, Volt — actual values, Saturn — backup/sync intent и stored recovery objects.
+- Chronos, Perimetr, Pods, Laboratory, Mastermind, Agent и Library НЕ ВХОДЯТ автоматически в initial six-component profile. Их подключение требует versioned profile, Register migration и acceptance evidence.
+- Dashboard Kernel ДОЛЖЕН проверять только Kernel, Saturn и Volt; Neptune и Updater отображаются в профильных Settings states, а Gryphon — в consuming-service workflows.
+
 ## 12. Bootstrap сервисов
 
-Каждый сервис МОЖЕТ хранить локально только минимальный bootstrap:
+Каждый consumer МОЖЕТ хранить локально только минимальный защищённый bootstrap:
 
 ```text
 KERNEL_URL
-SERVICE_ID
-SERVICE_CREDENTIAL
-LOCAL_CACHE_PATH
+KERNEL_SERVICE_TOKEN или отдельный service credential
+LOCAL_CACHE_PATH (если профиль допускает last-known-good references)
 ```
 
-- Значения, которые могут централизованно публиковаться через Kernel, НЕ СЛЕДУЕТ дублировать вручную в каждом сервисе.
+- Kernel отдельно хранит защищённый Volt URL/token bootstrap; этот credential НЕ ЯВЛЯЕТСЯ consumer credential.
+- Значения, которые публикуются через Kernel/Volt, НЕ СЛЕДУЕТ дублировать вручную в каждом сервисе.
 - Bootstrap secret НЕ ДОЛЖЕН попадать в репозиторий или Register.
 - Изменение Kernel URL или service credential ДОЛЖНО происходить контролируемо.
 
@@ -201,29 +224,30 @@ LOCAL_CACHE_PATH
 
 Порядок:
 
-1. сервис аутентифицируется;
-2. получает разрешённый scope опубликованного snapshot;
-3. проверяет revision и checksum;
-4. валидирует структуру и обязательные поля;
-5. сохраняет snapshot как last-known-good;
+1. сервис аутентифицируется в Kernel;
+2. получает стабильный versioned snapshot Register или запрашивает конкретные keys через resolve API;
+3. проверяет revision, checksum, media type и schema;
+4. валидирует структуру и обязательные keys;
+5. при необходимости сохраняет только references как last-known-good;
 6. атомарно переключается на новую revision;
-7. периодически проверяет обновления.
+7. разрешает фактические значения через Kernel broker и держит их только в памяти;
+8. периодически проверяет обновления.
 
 - Draft-конфигурация НЕ ДОЛЖНА выдаваться обычным сервисам.
 - Сервис НЕ ДОЛЖЕН применять частично загруженный snapshot.
 - Невалидная новая revision НЕ ДОЛЖНА заменять рабочую.
 - Для unchanged-состояния СЛЕДУЕТ использовать ETag или аналогичный механизм.
-- Сервис ДОЛЖЕН получать только необходимый ему scope.
+- Текущий v1 trusted-zone contract использует общий `KERNEL_SERVICE_TOKEN` без per-service field grants. Этот широкий credential ДОЛЖЕН считаться чувствительным и не должен выдаваться внешним клиентам.
 
 ## 14. Поведение при недоступности Kernel
 
 ### Первый запуск
 
-Если сервис не имеет last-known-good, а Kernel недоступен, сервис ДОЛЖЕН завершить запуск безопасным отказом.
+Если сервис не имеет last-known-good references, а Kernel недоступен, сервис ДОЛЖЕН завершить запуск безопасным отказом. Если запуск требует фактических значений, недоступность Kernel или разблокированного Volt также является fail-secure состоянием.
 
 ### Повторный запуск
 
-Если существует проверенный last-known-good, сервис МОЖЕТ продолжить работу в degraded-режиме.
+Если существует проверенный last-known-good и операция не требует повторного разрешения значения, сервис МОЖЕТ продолжить работу в degraded-режиме. Resolved plaintext НЕ ДОЛЖЕН превращаться в долговременный cache.
 
 При этом он ДОЛЖЕН:
 
@@ -249,6 +273,8 @@ Security-critical функция МОЖЕТ быть отключена неза
 
 Topology Map предназначена для человека.
 
+- Текущая реализация Kernel использует versioned Excalidraw document.
+- Open Node НЕ ЯВЛЯЕТСЯ текущим runtime или dependency Topology Map.
 - Она МОЖЕТ отображать существующие и планируемые модули.
 - Она НЕ ДОЛЖНА автоматически исполнять связи.
 - Координаты, цвет и расположение нод НЕ ЯВЛЯЮТСЯ конфигурацией сервисов.
@@ -271,14 +297,16 @@ Topology Map предназначена для человека.
 ## 18. Отдельная identity сервисов
 
 - Каждый сервис или значимый экземпляр ДОЛЖЕН иметь отдельную identity.
-- Один общий бессрочный токен на всю экосистему допускается только как временная мера v0.
+- Один общий бессрочный токен на всю экосистему допускается только как явно документированная trusted-zone мера v0. Текущий общий `KERNEL_SERVICE_TOKEN` не отменяет отдельные per-head Updater, Neptune и Gryphon credentials.
 - Credential одного сервиса ДОЛЖЕН отзываться без ротации всех остальных.
 - В будущем СЛЕДУЕТ использовать mTLS, certificates или короткоживущие tokens.
 - Identity и scope ДОЛЖНЫ отображаться в audit.
 
 ## 19. Аутентификация человека
 
-- Пароли ДОЛЖНЫ храниться только в виде безопасного hash.
+- Access Key ДОЛЖЕН храниться только как verifier или cryptographic wrapping input, соответствующий профилю сервиса.
+- Явно заданный Access Key ДОЛЖЕН обрабатываться как точное непрозрачное значение: без minimum/maximum length, composition, ASCII/URL-safe, strength, entropy или known-placeholder policy.
+- Access Key НЕ ДОЛЖЕН trim-иться, нормализоваться, менять регистр или усекаться при bootstrap, login, rotation, backup/restore или offline unlock. Отсутствие настройки является ошибкой; форма значения — нет.
 - Сессии ДОЛЖНЫ иметь срок жизни и возможность отзыва.
 - Cookies административных интерфейсов ДОЛЖНЫ использовать `HttpOnly`, `Secure` при HTTPS и подходящий `SameSite`.
 - Повторные неудачные попытки входа ДОЛЖНЫ ограничиваться.
@@ -354,6 +382,10 @@ Topology Map предназначена для человека.
 - Секретные backups ДОЛЖНЫ быть зашифрованы.
 - Резервная копия НЕ ДОЛЖНА храниться единственным экземпляром на том же устройстве.
 - Политика retention ДОЛЖНА быть документирована.
+- Saturn ДОЛЖЕН оставаться authority для schedules, setup codes, remote runs и fleet observed state.
+- Neptune ДОЛЖЕН передавать exact archive bytes main service и НЕ ДОЛЖЕН самостоятельно менять логический формат backup.
+- Volt recovery ZIP и mirror `personal.volt` ДОЛЖНЫ оставаться независимыми recovery paths.
+- Наличие установленного daemon или socket НЕ ДОЛЖНО считаться доказательством enrollment, authentication или успешного последнего run.
 
 ## 27. Удаление данных
 
@@ -406,15 +438,21 @@ Topology Map предназначена для человека.
 volt://<entry-id>/<value-position>
 ```
 
+`entry-id` ДОЛЖЕН быть UUID записи Volt, а `value-position` — числом от `1` до `5`. Field UUID, произвольный path и plaintext недопустимы.
+
 Фактическое значение ДОЛЖЕН запрашивать Kernel у Volt от своего имени и
 возвращать только внутреннему сервису с действующим `KERNEL_SERVICE_TOKEN`.
-Volt принимает machine-запросы только с отдельным Kernel-to-Volt token. В
+Volt принимает machine-запросы только с отдельным Kernel-to-Volt token и хранит
+только его verifier. В
 текущей доверенной зоне нет отдельных прав на сервисы или поля: любой сервис с
 Kernel token может разрешить любую Volt-ссылку, опубликованную в Register.
-Это правило относится и к открытым, и к секретным значениям. Локальный
+Batch resolution ДОЛЖЕН быть ограничен 20 уникальными элементами и работать
+all-or-nothing. Это правило относится и к открытым, и к секретным значениям. Локальный
 last-known-good МОЖЕТ содержать только ссылки; разрешённые значения НЕ ДОЛЖНЫ
 записываться в него. Новый процесс без доступных Kernel и Volt ДОЛЖЕН завершить
 запуск безопасным отказом, даже если reference snapshot уже закэширован.
+
+Volt `personal.volt` ДОЛЖЕН оставаться переносимым зашифрованным authority-файлом. Access Key необходим для unlock/offline-open; device key не может молча заменить его. Locked process МОЖЕТ показывать login/unlock surface, но readiness ДОЛЖЕН оставаться failed до успешного unlock.
 
 ## 31. Жизненный цикл секретов
 
@@ -434,9 +472,11 @@ last-known-good МОЖЕТ содержать только ссылки; раз�
 
 - Чувствительные соединения ДОЛЖНЫ использовать защищённый транспорт.
 - Административные порты НЕ ДОЛЖНЫ публиковаться напрямую в интернет без необходимости.
-- Страница входа Kernel ДОЛЖНА быть доступна с любого клиентского IP через
-  единый серверный Nginx; данные ДОЛЖНЫ защищаться Access Key и ограниченной
+- Страницы входа Kernel, Volt и Saturn ДОЛЖНЫ быть доступны с любого клиентского IP через
+  единый host-managed Nginx; данные ДОЛЖНЫ защищаться Access Key и ограниченной
   сессией приложения, а не VPN, SSH tunnel или source-IP allow-list.
+- Приложения ДОЛЖНЫ публиковать listener только на loopback; один Nginx владеет TCP 80/443, TLS, WebSocket forwarding, route limits и fail-closed default host.
+- Main-service installer НЕ ДОЛЖЕН устанавливать или запускать собственный Nginx/Caddy.
 - TLS verification НЕ ДОЛЖНА отключаться как постоянное решение.
 - Внутренние endpoints ДОЛЖНЫ быть явно отделены от публичных.
 
@@ -568,6 +608,16 @@ Agent является исполнителем, но не authority.
 - Агент НЕ ДОЛЖЕН скрывать частичное выполнение.
 - Опасная команда ДОЛЖНА требовать approval согласно политике.
 - Агент ДОЛЖЕН иметь отдельную identity и возможность отзыва.
+
+### 42.1 Текущие host helpers
+
+- Updater ДОЛЖЕН быть единственным root-owned deployment helper на Linux host и принимать только allow-listed typed operations от зарегистрированного head.
+- Main-service web process НЕ ДОЛЖЕН получать Docker socket, `sudo`, произвольный shell или Gryphon admin socket.
+- Neptune ДОЛЖЕН работать как один unprivileged daemon на host, использовать отдельные project credentials и инициировать только outbound соединения к Saturn.
+- Gryphon ДОЛЖЕН быть единым Telegram gateway. Chronos, Saturn и другие consumers НЕ ДОЛЖНЫ хранить bot token или запускать собственный webhook/polling runtime.
+- Установка helper, enrollment, authentication, last-seen, applied schedule и terminal job result ДОЛЖНЫ отображаться как разные состояния.
+- Setup code ДОЛЖЕН быть typed, short-lived и single-use; main service НЕ ДОЛЖЕН сохранять его после передачи Updater.
+- Обновление helper ДОЛЖНО включать подписанный executable/application tree и supervisor unit как один проверяемый contract.
 
 ## 43. Shell и PTY
 
@@ -715,6 +765,9 @@ Evaluator НЕ ЗАМЕНЯЕТ policy engine. Хороший по содерж�
 
 ## 54. UI как представление, а не authority
 
+- Operator UI ДОЛЖЕН соответствовать актуальному Part 01: token palette, типографике, геометрии, responsive и accessibility rules.
+- Page title использует product title casing, а sidebar label остаётся самостоятельным навигационным текстом; изменение одного НЕ ДОЛЖНО неявно менять другое.
+- Каждое editable search field ДОЛЖНО иметь доступный clear-cross внутри поля при непустом query, зарезервированный inline-end padding и сохранение focus после очистки.
 - UI НЕ ДОЛЖЕН хранить единственную копию состояния.
 - UI ДОЛЖЕН получать актуальное состояние через API.
 - Optimistic update ДОЛЖЕН подтверждаться серверным результатом.
@@ -739,6 +792,7 @@ Evaluator НЕ ЗАМЕНЯЕТ policy engine. Хороший по содерж�
 - известные ограничения.
 
 Изменение публичного поведения ДОЛЖНО сопровождаться обновлением документации.
+Перед push затронутый Documentation view и технические документы ДОЛЖНЫ пройти синхронизацию терминов, navigation/search index, broken-link и render checks.
 
 ## 56. Overview и Constitution
 
@@ -782,6 +836,8 @@ Evaluator НЕ ЗАМЕНЯЕТ policy engine. Хороший по содерж�
 - тест запрета секретов в логах и Register.
 
 Прохождение тестов НЕ заменяет review, но является обязательным checkpoint перед релизом.
+Каждый push ДОЛЖЕН пройти семизонный change-impact gate из Part 00/06. Каждый service-qualified release дополнительно ДОЛЖЕН пройти актуальный Part 12 known-problem gate с revision-bound `known-problems-report.json`.
+Для coordinated profile локальные unit/build tests НЕ заменяют connected checks Kernel→Volt, signed release rejection, Neptune/Saturn recovery, public edge и rollback.
 
 ## 60. Миграции
 
@@ -816,6 +872,7 @@ Evaluator НЕ ЗАМЕНЯЕТ policy engine. Хороший по содерж�
 - безопасными метриками.
 
 Health endpoint НЕ ДОЛЖЕН раскрывать секреты или лишние внутренние данные.
+Liveness, dependency-aware readiness, host-loopback reachability, public edge и helper enrollment ДОЛЖНЫ проверяться и отображаться раздельно. Transport error НЕ ДОЛЖЕН автоматически превращаться в `not installed`.
 
 ## 63. Аварийный доступ
 
@@ -852,6 +909,11 @@ Emergency-механизм:
 13. выдавать результат LLM за подтверждённый факт без маркировки;
 14. удалять единственную резервную копию до проверки новой;
 15. скрывать фактическую ошибку успешным статусом UI.
+16. передавать main-service container Docker socket, `sudo` или helper admin socket;
+17. считать установленный binary, принятый job или webhook ping доказательством полного end-to-end успеха;
+18. сохранять resolved Volt values в Register, long-lived cache, backup metadata или audit;
+19. устанавливать отдельный Nginx/Caddy из main-service bundle при наличии host-managed ingress;
+20. обходить service-qualified signed release и known-problem gate для production publication.
 
 ---
 
@@ -897,8 +959,11 @@ Emergency-механизм:
 
 ```text
 Человек определяет цели и сохраняет финальный контроль.
-Constitution определяет допустимые границы.
-Kernel публикует правила, описание и глобальные non-secret координаты.
+Central .docs задаёт общесистемные контракты, Constitution — допустимые границы Exocortex.
+Kernel публикует правила, ссылки и глобальные non-secret координаты.
+Volt владеет фактическими значениями и раскрывает их только через Kernel broker.
+Saturn владеет backup/sync intent, Updater — typed privileged execution.
+Neptune передаёт recovery data, Gryphon маршрутизирует Telegram.
 Authorities владеют фактами своих доменов.
 Сервисы получают минимально необходимую конфигурацию и работают автономно.
 Агенты выполняют только санкционированные действия.

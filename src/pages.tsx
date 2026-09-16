@@ -16,6 +16,7 @@ import {
   ConfirmDialog,
   EntryForm,
   Modal,
+  SearchField,
   formatBytes,
   formatDate,
   shortHash,
@@ -588,15 +589,12 @@ export function RegisterPage({ notify }: { notify: Notify }) {
   return (
     <section className="page-body">
       <div className="register-toolbar">
-        <label className="search-field">
-          <span>Search</span>
-          <input
-            type="search"
-            value={search}
-            placeholder="key, value or description"
-            onChange={(event) => setSearch(event.target.value)}
-          />
-        </label>
+        <SearchField
+          value={search}
+          label="Search Register"
+          placeholder="Search by key, value or description"
+          onChange={setSearch}
+        />
         <div className="revision-box">
           <span>Active revision</span>
           <strong>{snapshot?.revision ?? "Loading..."}</strong>
