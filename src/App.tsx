@@ -182,8 +182,10 @@ export function App() {
     ? "Documentation"
     : NAVIGATION.find((item) => item.id === view)?.label;
 
+  const topologyFocusMode = view === "topology" && settings.sidebar_auto_hide;
+
   return (
-    <div className={`kernel-ui kernel-shell ${settings.sidebar_auto_hide ? "sidebar-auto" : "sidebar-fixed"} ${sidebarOpen ? "sidebar-force-open" : ""}`}>
+    <div className={`kernel-ui kernel-shell ${settings.sidebar_auto_hide ? "sidebar-auto" : "sidebar-fixed"} ${sidebarOpen ? "sidebar-force-open" : ""} ${topologyFocusMode ? "topology-focus" : ""}`}>
       <button className="mobile-menu" aria-label="Open navigation" onClick={() => setSidebarOpen(true)}>Menu</button>
       {sidebarOpen && <button className="sidebar-backdrop" aria-label="Close navigation" onClick={() => setSidebarOpen(false)} />}
       <div className="sidebar-activation" onPointerEnter={() => setSidebarOpen(true)} aria-hidden="true" />
@@ -236,7 +238,16 @@ export function App() {
           {view === "overview" && <DocumentPage type="overview" />}
           {view === "topology" && (
             <Suspense fallback={<div className="loading-panel">Loading visual map...</div>}>
-              <TopologyPage notify={notify} />
+              <TopologyPage
+                notify={notify}
+                focusMode={topologyFocusMode}
+                onFocusModeChange={async (enabled) => {
+                  await persistSettings(
+                    { ...settings, sidebar_auto_hide: enabled },
+                    enabled ? "Topology focus enabled" : "Topology interface restored",
+                  );
+                }}
+              />
             </Suspense>
           )}
           {view === "register" && <RegisterPage notify={notify} />}

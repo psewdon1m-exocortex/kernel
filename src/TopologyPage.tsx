@@ -104,7 +104,11 @@ function serializeScene(
   return { ...document, files: document.files ?? {} };
 }
 
-export function TopologyPage({ notify }: { notify: Notify }) {
+export function TopologyPage({ notify, focusMode, onFocusModeChange }: {
+  notify: Notify;
+  focusMode: boolean;
+  onFocusModeChange(enabled: boolean): Promise<void>;
+}) {
   const editorRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const saveTimerRef = useRef<number | undefined>(undefined);
   const savingRef = useRef(false);
@@ -117,6 +121,7 @@ export function TopologyPage({ notify }: { notify: Notify }) {
   const [metadata, setMetadata] = useState<Omit<TopologyPayload, "project">>();
   const [status, setStatus] = useState("Loading map...");
   const [gridEnabled, setGridEnabled] = useState(true);
+  const [focusPending, setFocusPending] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [versions, setVersions] = useState<RevisionSummary[]>([]);
   const [restore, setRestore] = useState<RevisionSummary>();
@@ -234,6 +239,15 @@ export function TopologyPage({ notify }: { notify: Notify }) {
     setGridEnabled(enabled);
   }, []);
 
+  const toggleFocusMode = useCallback(async () => {
+    setFocusPending(true);
+    try {
+      await onFocusModeChange(!focusMode);
+    } finally {
+      setFocusPending(false);
+    }
+  }, [focusMode, onFocusModeChange]);
+
   const loadVersions = async () => {
     try {
       const result = await api<{ versions: RevisionSummary[] }>("/api/topology/versions");
@@ -313,6 +327,15 @@ export function TopologyPage({ notify }: { notify: Notify }) {
                   onClick={toggleGrid}
                 >
                   Grid {gridEnabled ? "On" : "Off"}
+                </button>
+                <button
+                  type="button"
+                  aria-label={focusMode ? "Show surrounding interface" : "Hide surrounding interface"}
+                  aria-pressed={focusMode}
+                  disabled={focusPending}
+                  onClick={() => void toggleFocusMode()}
+                >
+                  Focus {focusMode ? "On" : "Off"}
                 </button>
                 <button type="button" onClick={() => void save(true)}>Save</button>
                 <button type="button" onClick={openHistory}>Versions</button>

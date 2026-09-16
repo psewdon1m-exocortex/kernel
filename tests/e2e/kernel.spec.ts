@@ -295,6 +295,7 @@ test("Topology embeds Excalidraw across the requested viewport and persists draw
   await expect(editor.getByRole("radio", { name: /Text/ })).toBeVisible();
   const gridToggle = page.getByRole("button", { name: "Hide canvas grid" });
   await expect(gridToggle).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Hide surrounding interface" })).toHaveAttribute("aria-pressed", "false");
   await expect(page.getByRole("button", { name: "Save", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Versions", exact: true })).toBeVisible();
 
@@ -303,6 +304,34 @@ test("Topology embeds Excalidraw across the requested viewport and persists draw
   expect(geometry?.y).toBeCloseTo(129, 0);
   expect(geometry?.width).toBeCloseTo(1654, 0);
   expect(geometry?.height).toBeCloseTo(898, 0);
+
+  await page.getByRole("button", { name: "Hide surrounding interface" }).click();
+  await expect(page.getByRole("button", { name: "Show surrounding interface" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".kernel-shell")).toHaveClass(/topology-focus/);
+  await expect(page.locator(".page-title")).toBeHidden();
+  await expect.poll(async () => (await topology.boundingBox())?.x).toBeCloseTo(7, 0);
+  const focusedGeometry = await topology.boundingBox();
+  expect(focusedGeometry?.x).toBeCloseTo(7, 0);
+  expect(focusedGeometry?.y).toBeCloseTo(6, 0);
+  expect(focusedGeometry?.width).toBeCloseTo(1904, 0);
+  expect(focusedGeometry?.height).toBeCloseTo(1021, 0);
+  await expect.poll(async () => page.evaluate(async () => {
+    const response = await fetch("/api/settings");
+    return (await response.json()).sidebar_auto_hide as boolean;
+  })).toBe(true);
+
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Show surrounding interface" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".page-title")).toBeHidden();
+  await page.getByRole("button", { name: "Show surrounding interface" }).click();
+  await expect(page.getByRole("button", { name: "Hide surrounding interface" })).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator(".kernel-shell")).not.toHaveClass(/topology-focus/);
+  await expect(page.locator(".page-title")).toBeVisible();
+  await expect.poll(async () => (await topology.boundingBox())?.x).toBeCloseTo(257, 0);
+  await expect.poll(async () => page.evaluate(async () => {
+    const response = await fetch("/api/settings");
+    return (await response.json()).sidebar_auto_hide as boolean;
+  })).toBe(false);
 
   await gridToggle.click();
   await expect(page.getByRole("button", { name: "Show canvas grid" })).toHaveAttribute("aria-pressed", "false");
