@@ -39,6 +39,22 @@ export function createVoltClient({
     : 3000;
 
   return {
+    async wyvern(operation, input) {
+      if (!["inspect", "publish"].includes(operation) || !validatedUrl || !token) throw clientError(503, "VOLT_NOT_CONFIGURED", "Volt publication is unavailable");
+      const controller = AbortSignal.timeout(Math.max(timeout, 10000));
+      let response;
+      try { response = await fetchImpl(`${validatedUrl}/api/v1/internal/kernel/wyvern/${operation}`, {
+        method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify(input), redirect: "error", signal: controller,
+      }); } catch { throw clientError(503, "VOLT_UNAVAILABLE", "Volt publication is unavailable"); }
+      if (!response.ok) { await response.body?.cancel?.(); throw clientError(response.status === 409 ? 409 : response.status === 400 ? 400 : 503, "WYVERN_PUBLICATION_FAILED", "Volt rejected the publication or its outcome is unknown"); }
+      let text = "";
+      for await (const block of response.body) { text += Buffer.from(block).toString("utf8"); if (Buffer.byteLength(text) > 65536) throw clientError(503, "VOLT_RESPONSE_INVALID", "Invalid publication response"); }
+      let result;
+      try { result = JSON.parse(text); } catch { throw clientError(503, "VOLT_RESPONSE_INVALID", "Invalid publication response"); }
+      if (result.schema !== "exocortex.volt.wyvern.v1" || result.instance_id !== input.instance_id || !Number.isSafeInteger(result.revision) || !result.references) throw clientError(503, "VOLT_RESPONSE_INVALID", "Invalid publication response");
+      return result;
+    },
     async resolve(references) {
       if (!validatedUrl || !token) {
         throw clientError(503, "VOLT_NOT_CONFIGURED", "Kernel value resolution is not configured");
@@ -98,8 +114,7 @@ export { validateBaseUrl as validateVoltUrl };
 /** Bootstrap coordinates break the discovery cycle; operational requests use the current Register route. */
 export function createDiscoveredVoltClient({ baseUrl, token, getRouteReferences, timeoutMs, fetchImpl }) {
   const bootstrap = createVoltClient({ baseUrl, token, timeoutMs, fetchImpl });
-  return {
-    async resolve(references) {
+  async function operationalClient() {
       const route = getRouteReferences();
       const reference = /^volt:\/\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/[1-5]$/i;
       if (!reference.test(route.sni) || !reference.test(route.port))
@@ -111,7 +126,10 @@ export function createDiscoveredVoltClient({ baseUrl, token, getRouteReferences,
         throw clientError(503, "VOLT_ROUTE_INVALID", "The registered Volt route is invalid");
       const local = ["127.0.0.1", "localhost"].includes(host);
       const scheme = local && new URL(baseUrl).protocol === "http:" ? "http:" : "https:";
-      return createVoltClient({ baseUrl: `${scheme}//${host}:${port}`, token, timeoutMs, fetchImpl }).resolve(references);
-    },
+      return createVoltClient({ baseUrl: `${scheme}//${host}:${port}`, token, timeoutMs, fetchImpl });
+  }
+  return {
+    async resolve(references) { return (await operationalClient()).resolve(references); },
+    async wyvern(operation, input) { return (await operationalClient()).wyvern(operation, input); },
   };
 }

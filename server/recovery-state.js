@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { expandDottedValues, registerChecksum } from "./machine-contract.js";
+import { PRINCIPALS_SETTING, validatePrincipals } from "./machine-principals.js";
 
 const TABLES = {
   document_revisions: ["id", "revision", "document_type", "content", "checksum", "actor", "reason", "source_revision", "created_at"],
@@ -9,7 +10,7 @@ const TABLES = {
   audit_events: ["id", "event_id", "actor", "action", "target", "status", "details_json", "created_at"],
 };
 const SETTINGS = new Set(["theme_dark", "theme_light", "theme_accent", "sidebar_auto_hide",
-  "revision_request_logging", "navigation_order", "dashboard_order", "settings_order", "volt_url"]);
+  "revision_request_logging", "navigation_order", "dashboard_order", "settings_order", "volt_url", PRINCIPALS_SETTING]);
 const hash = (text) => "sha256:" + createHash("sha256").update(text).digest("hex");
 const invalid = (message) => Object.assign(new Error(message), { status: 400, code: "BACKUP_STATE_INVALID" });
 
@@ -56,6 +57,7 @@ export function importRecoveryState(store, state, actor, registerValidator) {
   for (const row of state.settings) {
     if (!SETTINGS.has(row.key) || typeof row.value !== "string" || seen.has(row.key)) throw invalid("Unsafe or duplicate recovery setting");
     seen.add(row.key);
+    if (row.key === PRINCIPALS_SETTING) validatePrincipals(JSON.parse(row.value));
     if (row.key.endsWith("_order") && !Array.isArray(JSON.parse(row.value))) throw invalid("Invalid interface order");
     if (row.key === "volt_url" && row.value) {
       const url = new URL(row.value);

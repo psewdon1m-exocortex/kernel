@@ -196,10 +196,25 @@ API Kernel и передать до 20 Register keys в `POST /api/v1/register/r
 `volt://<entry-id>/<value-position>`. Позиция начинается с `1`. Kernel разрешает все запрошенные ссылки в Volt
 от своего имени и возвращает сервису только готовое отображение ключей.
 
-Это сознательно простая модель доверенной зоны без ACL: любой сервис с
-`KERNEL_SERVICE_TOKEN` может разрешить любое значение текущей опубликованной
-ревизии Register. Компрометация одного сервиса поэтому открывает все значения
-Register. Отдельный `VOLT_KERNEL_TOKEN` известен только Kernel и Volt. Его
+Для прежних ключей сохраняется общая доверенная зона: сервис с
+`KERNEL_SERVICE_TOKEN` может разрешать значения текущей опубликованной
+ревизии, кроме защищённого пространства Wyvern и aliases к тем же значениям.
+Ключи `wyvern.*` и `services.<service>.wyvern.*` требуют отдельного machine
+principal с точным списком разрешённых ключей. Оператор создаёт или отзывает
+его через `PUT /api/machine-principals/<id>`: `token_sha256`, `allowed_keys`,
+`enabled`. Plaintext token не сохраняется; список principals не возвращает
+verifier. Метаданные identities/grants входят в логическое восстановление;
+исходные machine credentials восстанавливаются отдельно. Общий bootstrap
+token нельзя переиспользовать как scoped principal.
+
+`POST /api/v1/register/resolve` принимает необязательные
+`expected_register_revision` и `expected_volt_revisions` (key → revision).
+Несовпадение возвращает 409 без разрешённых значений. Проверки выполняются
+для полного ограниченного пакета, поэтому потребитель может собрать bundle
+и credentials без принятия смешанных поколений. Изменения Volt необходимо
+проверять и при неизменном Register ETag.
+
+Отдельный `VOLT_KERNEL_TOKEN` известен только Kernel и Volt. Его
 задают в разделе Settings обоих приложений; Kernel хранит значение
 AES-256-GCM-зашифрованным с ключом, производным от `KERNEL_SESSION_SECRET`, а
 Volt хранит только SHA-256 verifier. Токен никогда не возвращается через API и

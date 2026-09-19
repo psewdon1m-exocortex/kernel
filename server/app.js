@@ -20,6 +20,8 @@ import {
 import { createMetricsCollector } from "./metrics.js";
 import { createServiceStatusCollector, SERVICE_STATUS_DEFINITIONS } from "./service-status.js";
 import { KernelStore } from "./store.js";
+import { authenticatePrincipal, assertResolveAllowed, loadPrincipals, validatePrincipals, PRINCIPALS_SETTING } from "./machine-principals.js";
+import { mountWyvern } from "./wyvern.js";
 import { inspectRegisterProfile, inspectResolvedProfile, validateProfileBindings } from "./register-profile.js";
 import {
   CONSTITUTION_MEDIA_TYPE,
@@ -587,6 +589,8 @@ export function createKernelApp(options) {
     const authorization = req.get("authorization") ?? "";
     if (authorization.startsWith("Bearer ")) {
       const presentedToken = authorization.slice(7);
+      const principal = authenticatePrincipal(store, presentedToken);
+      if (principal) return principal;
       if (verifyApiToken(presentedToken, apiToken)) {
         return { actor: "internal-service", kind: "service" };
       }
@@ -651,7 +655,7 @@ export function createKernelApp(options) {
 
   function machineAudit(req, status = "success", details = {}) {
     if (store.getSetting("revision_request_logging") === "false") return;
-    store.audit("internal-service", "machine.read", req.path, status, {
+    store.audit(safeActor(req), "machine.read", req.path, status, {
       request_id: req.requestId,
       method: req.method,
       source_address: req.ip || req.socket.remoteAddress || null,
@@ -821,6 +825,13 @@ export function createKernelApp(options) {
         return machineError(req, res, 400, "REGISTER_KEYS_INVALID", "keys must contain between 1 and 20 valid dotted Register keys.");
       }
       const keys = [...new Set(submitted.map((key) => key.trim()))];
+      const expectedRegister = req.body.expected_register_revision;
+      const expectedVolt = req.body.expected_volt_revisions ?? {};
+      if ((expectedRegister !== undefined && (typeof expectedRegister !== "string" || expectedRegister.length > 128 || !expectedRegister)) ||
+          !expectedVolt || typeof expectedVolt !== "object" || Array.isArray(expectedVolt) ||
+          Object.entries(expectedVolt).some(([key, revision]) => !keys.includes(key) || !Number.isSafeInteger(revision) || revision < 1)) {
+        return machineError(req, res, 400, "REGISTER_EXPECTATION_INVALID", "Expected revisions must address requested keys.");
+      }
       const address = req.ip || req.socket.remoteAddress || "unknown";
       const now = Date.now();
       if (!recordResolutionAttempt(address, now)) {
@@ -830,6 +841,10 @@ export function createKernelApp(options) {
 
       const snapshot = publishableRegisterSnapshot(req, res);
       if (!snapshot) return;
+      assertResolveAllowed(req.auth, keys, snapshot);
+      if (expectedRegister !== undefined && expectedRegister !== snapshot.revision) {
+        return machineError(req, res, 409, "REGISTER_REVISION_CONFLICT", "The published Register revision changed.");
+      }
       const selected = new Map();
       const references = [];
       for (const key of keys) {
@@ -851,6 +866,9 @@ export function createKernelApp(options) {
       const values = {};
       for (const [key, storedValue] of selected) {
         const resolved = volt.values[storedValue];
+        if (Object.hasOwn(expectedVolt, key) && resolved.revision !== expectedVolt[key]) {
+          return machineError(req, res, 409, "VOLT_REVISION_CONFLICT", "A resolved value changed; reload the complete configuration.");
+        }
         values[key] = {
           value: resolved.value,
           secret: resolved.visibility === "secret",
@@ -867,6 +885,7 @@ export function createKernelApp(options) {
       return sendMachineJson(res, REGISTER_MEDIA_TYPE, {
         schema: "exocortex.register.resolution.v1",
         register_revision: snapshot.revision,
+        resolution_revision: volt?.resolution_revision ?? null,
         values,
       });
     } catch (error) {
@@ -1054,6 +1073,30 @@ export function createKernelApp(options) {
     } catch (error) {
       next(error);
     }
+  });
+
+  app.get("/api/machine-principals", requireOperator, (_req, res, next) => {
+    try { res.json({ schema: "exocortex.kernel.machine-principals.v1", principals: loadPrincipals(store).map(({ token_sha256, ...principal }) => principal) }); }
+    catch (error) { next(error); }
+  });
+
+  mountWyvern(app, { store, activeVoltClient, requireOperator, requireMachine, legacyToken: apiToken });
+
+  app.put("/api/machine-principals/:id", requireOperator, (req, res, next) => {
+    try {
+      const principal = { ...req.body, id: req.params.id };
+      const current = loadPrincipals(store);
+      const proposed = validatePrincipals([...current.filter(item => item.id !== principal.id), principal]);
+      // The legacy bootstrap token must never become an alias for a scoped identity.
+      if (proposed.some(item => item.token_sha256 === createHash("sha256").update(apiToken).digest("hex"))) {
+        return res.status(400).json({ error: "A principal requires its own machine credential" });
+      }
+      store.transaction(() => {
+        store.setSetting(PRINCIPALS_SETTING, JSON.stringify(proposed));
+        store.audit(safeActor(req), "machine-principal.updated", principal.id, "success", { enabled: principal.enabled, key_count: principal.allowed_keys.length });
+      });
+      res.json({ id: principal.id, enabled: principal.enabled, allowed_keys: principal.allowed_keys });
+    } catch (error) { next(error); }
   });
 
   app.post("/api/register/entries", requireOperator, (req, res, next) => {

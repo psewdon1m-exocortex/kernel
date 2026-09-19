@@ -386,15 +386,18 @@ export class KernelStore {
   }
 
   transaction(callback) {
-    this.db.exec("BEGIN IMMEDIATE");
+    const depth = this._transactionDepth ?? 0;
+    const savepoint = "kernel_nested_" + depth;
+    this.db.exec(depth ? "SAVEPOINT " + savepoint : "BEGIN IMMEDIATE");
+    this._transactionDepth = depth + 1;
     try {
       const result = callback();
-      this.db.exec("COMMIT");
+      this.db.exec(depth ? "RELEASE " + savepoint : "COMMIT");
       return result;
     } catch (error) {
-      this.db.exec("ROLLBACK");
+      this.db.exec(depth ? "ROLLBACK TO " + savepoint + "; RELEASE " + savepoint : "ROLLBACK");
       throw error;
-    }
+    } finally { this._transactionDepth = depth; }
   }
 
   close() {
