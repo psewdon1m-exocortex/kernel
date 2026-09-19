@@ -302,8 +302,8 @@ Production-обновление не должно клонировать и со
 Settings содержит операторский `Updater`: по явному запросу он читает
 `repositories.kernel.url` из Register и проверяет только релизы `kernel-v*`.
 Отдельная ручная проверка версии Updater читает `repositories.updater.url` и
-проверяет релизы `updater-v*`; безопасная установка самого Updater остаётся
-host-командой `updater update --head kernel`.
+проверяет релизы `updater-v*`; установка выбранной версии самого Updater доступна в том же overlay без
+бэкапа. CLI `updater update --head kernel` остаётся эквивалентным средством.
 Автоматического polling нет. Audit ограничен одновременно числом записей,
 возрастом и суммарным размером хранимых событий через
 `KERNEL_AUDIT_MAX_ENTRIES`, `KERNEL_AUDIT_RETENTION_DAYS` и
@@ -345,3 +345,10 @@ npm run check
 - [Центральная спецификация унификации](https://github.com/psewdon1m-exocortex/general/blob/main/PART_00_SYSTEM_UNIFICATION_SPECIFICATION.md)
 
 The current six-service deployment, trust, recovery and acceptance contract is documented in [Deployment readiness](DEPLOYMENT_READINESS.md).
+
+## Unified updates (protocol 2)
+
+See [Update protocol, saved ZIP and first migration](docs/UPDATE-PROTOCOL.md).
+The UI uses Updater **0.5.0**, an exact selected version, the standard ZIP saved
+on the operator PC, and durable status/progress. Helper updates use the same
+dialog without a backup. No update ZIP is retained on the application host.

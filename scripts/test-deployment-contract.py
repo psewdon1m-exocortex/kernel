@@ -76,7 +76,7 @@ for term in ["NOT_RUN", "rollback", "SHA-256", "128 MiB", "Neptune", ".env"]:
     assert term.lower() in readiness.lower(), term
 policy = json.loads((root / ".release/known-problems-policy.json").read_text(encoding="utf-8"))
 assert policy["active_ids"] == 97 and len(policy["catalog_revision"]) == 40
-assert (root / ".release/updater.version").read_text(encoding="utf-8").strip() == "0.4.3"
+assert (root / ".release/updater.version").read_text(encoding="utf-8").strip() == "0.5.0"
 print(json.dumps({
     "service": "kernel",
     "version": version,

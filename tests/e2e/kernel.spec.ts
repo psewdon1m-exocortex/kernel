@@ -147,20 +147,33 @@ test("operator can navigate every Kernel section", async ({ page }) => {
   await expect(backupSection.getByRole("button", { name: "Browse local snapshot archive" })).toBeVisible();
   await expect(backupSection.getByText("Local Neptune agent:", { exact: true })).toBeVisible();
   await expect(backupSection.getByRole("heading", { name: "Automatic backup to Saturn" })).toBeVisible();
+  await expect(backupSection.getByRole("button", { name: "Check Neptune for updates" })).toBeVisible();
   await expect(backupSection.getByText(/Schedules, remote runs and Neptune fleet status are managed only from Saturn/)).toBeVisible();
   const updatesSection = page.locator("[data-settings-section='updates']");
   const updatesGeometry = await updatesSection.boundingBox();
   expect(Math.abs((updatesGeometry?.width ?? 0) - 1610)).toBeLessThanOrEqual(1);
-  expect(updatesGeometry?.height).toBeCloseTo(606, 0);
+  // .docs/src/updates.png is 566px tall; the extra direct-install row is retired.
+  expect(updatesGeometry?.height).toBeCloseTo(566, 0);
   await expect(updatesSection.getByText("Local updater agent:", { exact: true })).toBeVisible();
   await expect(updatesSection.getByText("Kernel Register:", { exact: true })).toBeVisible();
   await expect(updatesSection.getByRole("button", { name: "Check for updates" })).toBeVisible();
   await expect(updatesSection.getByRole("heading", { name: "Updater version", exact: true })).toBeVisible();
   await expect(updatesSection.getByRole("button", { name: "Check Updater for updates" })).toBeVisible();
+  await page.route("**/api/update-flow/check", route => route.fulfill({ json: {
+    component: "kernel", installed_version: "0.2.14", available_version: "0.2.15", update_available: true, updater_version: "0.5.0",
+  } }));
+  await page.route("**/api/update-flow/jobs", route => route.fulfill({ json: { jobs: [] } }));
+  await updatesSection.getByRole("button", { name: "Check for updates", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Updates", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Install 0.2.15", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Install KERNEL update" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Create backup and install" })).toBeVisible();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("button", { name: "Close updates" }).click();
 
   await navigate(page, "Documentation");
   await expect(page.locator(".page-title h1")).toHaveText("documentation");
-  await expect(page.getByText("Kernel 0.2.14 / Operator Guide", { exact: true })).toBeVisible();
+  await expect(page.getByText("Kernel 0.3.0 / Operator Guide", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Welcome To Kernel" })).toBeVisible();
   const documentationSearch = page.getByLabel("Search documentation");
   await documentationSearch.fill("last-known-good");

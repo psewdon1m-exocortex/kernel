@@ -1,4 +1,4 @@
-import { SelfUpdateButton } from "./SelfUpdateButton.js";
+import { openKernelUpdates } from "./update-flow.js";
 import { pendingAgentJob, waitForAgentJob, type AgentJob } from "./agent-job";
 import {
   useCallback,
@@ -37,8 +37,6 @@ import type {
   ServiceStatus,
   ServiceStatusSnapshot,
   UiSettings,
-  UpdateCheck,
-  UpdateJob,
   UpdaterStatus,
 } from "./types";
 
@@ -748,452 +746,6 @@ export function RegisterPage({ notify }: { notify: Notify }) {
   );
 }
 
-function LegacySettingsPage({
-  settings,
-  onSettings,
-  notify,
-}: {
-  settings: UiSettings;
-  onSettings(settings: UiSettings): void;
-  notify: Notify;
-}) {
-  const [draft, setDraft] = useState(settings);
-  const [appearancePending, setAppearancePending] = useState(false);
-  const [loggerPending, setLoggerPending] = useState(false);
-  const [updatePending, setUpdatePending] = useState(false);
-  const [updateCheck, setUpdateCheck] = useState<UpdateCheck>();
-  const [updaterStatus, setUpdaterStatus] = useState<UpdaterStatus>();
-  const [updateJob, setUpdateJob] = useState<UpdateJob>();
-  const [confirmUpdate, setConfirmUpdate] = useState(false);
-  const [audit, setAudit] = useState<AuditEvent[]>([]);
-  const [backupFile, setBackupFile] = useState<File>();
-  const [backupPending, setBackupPending] = useState(false);
-  const backupInputRef = useRef<HTMLInputElement>(null);
-  const [password, setPassword] = useState({ current: "", next: "", repeat: "" });
-  const [passwordPending, setPasswordPending] = useState(false);
-
-  const loadAudit = useCallback(() => {
-    api<{ events: AuditEvent[] }>("/api/audit?limit=100")
-      .then((result) => setAudit(result.events))
-      .catch((error: Error) => notify(error.message, "error"));
-  }, [notify]);
-
-  useEffect(loadAudit, [loadAudit]);
-
-  const loadUpdaterStatus = useCallback(() => {
-    api<UpdaterStatus>("/api/updater/status")
-      .then(setUpdaterStatus)
-      .catch((error: Error) => setUpdaterStatus({
-        installed: false,
-        available: false,
-        status: "unavailable",
-        service: "updater",
-        message: error.message,
-      }));
-  }, []);
-
-  useEffect(loadUpdaterStatus, [loadUpdaterStatus]);
-
-  useEffect(() => {
-    if (!updateJob || ["COMPLETED", "ROLLED_BACK", "FAILED", "ROLLBACK_FAILED"].includes(updateJob.state)) {
-      return undefined;
-    }
-    const timer = window.setInterval(() => {
-      api<UpdateJob>(`/api/updater/jobs/${encodeURIComponent(updateJob.id)}`)
-        .then(setUpdateJob)
-        .catch((error: Error) => notify(error.message, "error"));
-    }, 1500);
-    return () => window.clearInterval(timer);
-  }, [notify, updateJob]);
-
-  const saveAppearance = async (event: FormEvent) => {
-    event.preventDefault();
-    setAppearancePending(true);
-    try {
-      const value = await api<UiSettings>("/api/settings", {
-        method: "PUT",
-        body: JSON.stringify(draft),
-      });
-      onSettings(value);
-      setDraft(value);
-      notify("Appearance settings saved");
-      loadAudit();
-    } catch (error) {
-      notify((error as Error).message, "error");
-    } finally {
-      setAppearancePending(false);
-    }
-  };
-
-  const setSidebarFixed = async (fixed: boolean) => {
-    const previous = settings;
-    const next = { ...settings, sidebar_auto_hide: !fixed };
-    setDraft((current) => ({ ...current, sidebar_auto_hide: !fixed }));
-    onSettings(next);
-    setAppearancePending(true);
-    try {
-      const saved = await api<UiSettings>("/api/settings", {
-        method: "PUT",
-        body: JSON.stringify(next),
-      });
-      onSettings(saved);
-      setDraft((current) => ({ ...current, sidebar_auto_hide: saved.sidebar_auto_hide }));
-      notify(fixed ? "Sidebar fixed on screen" : "Sidebar auto-hide enabled");
-      loadAudit();
-    } catch (error) {
-      onSettings(previous);
-      setDraft((current) => ({
-        ...current,
-        sidebar_auto_hide: previous.sidebar_auto_hide,
-      }));
-      notify((error as Error).message, "error");
-    } finally {
-      setAppearancePending(false);
-    }
-  };
-
-  const setRevisionRequestLogging = async (enabled: boolean) => {
-    const previous = settings;
-    const next = { ...settings, revision_request_logging: enabled };
-    setDraft((current) => ({ ...current, revision_request_logging: enabled }));
-    onSettings(next);
-    setLoggerPending(true);
-    try {
-      const saved = await api<UiSettings>("/api/settings", {
-        method: "PUT",
-        body: JSON.stringify(next),
-      });
-      onSettings(saved);
-      setDraft((current) => ({
-        ...current,
-        revision_request_logging: saved.revision_request_logging,
-      }));
-      notify(enabled ? "Revision request logging enabled" : "Revision request logging disabled");
-      loadAudit();
-    } catch (error) {
-      onSettings(previous);
-      setDraft((current) => ({
-        ...current,
-        revision_request_logging: previous.revision_request_logging,
-      }));
-      notify((error as Error).message, "error");
-    } finally {
-      setLoggerPending(false);
-    }
-  };
-
-  const changePassword = async (event: FormEvent) => {
-    event.preventDefault();
-    if (password.next !== password.repeat) {
-      notify("The new passwords do not match", "error");
-      return;
-    }
-    setPasswordPending(true);
-    try {
-      await api("/api/settings/password", {
-        method: "POST",
-        body: JSON.stringify({
-          current_password: password.current,
-          new_password: password.next,
-        }),
-      });
-      setPassword({ current: "", next: "", repeat: "" });
-      notify("Operator password changed");
-      loadAudit();
-    } catch (error) {
-      notify((error as Error).message, "error");
-    } finally {
-      setPasswordPending(false);
-    }
-  };
-
-  const checkForUpdates = async () => {
-    setUpdatePending(true);
-    try {
-      const result = await api<UpdateCheck>("/api/updater/check", { method: "POST" });
-      setUpdateCheck(result);
-      notify(result.update_available ? "Kernel update is available" : "Kernel is up to date", "info");
-      loadAudit();
-    } catch (error) {
-      notify((error as Error).message, "error");
-    } finally {
-      setUpdatePending(false);
-    }
-  };
-
-  const downloadPreUpdateBackup = async () => {
-    const staged = await api<{ id: string; filename: string; download_url: string }>("/api/backups", {
-      method: "POST",
-    });
-    const response = await fetch(staged.download_url, { credentials: "same-origin" });
-    if (!response.ok) throw new Error(`Backup download failed with HTTP ${response.status}`);
-    const blob = await response.blob();
-    const disposition = response.headers.get("content-disposition") ?? "";
-    const filename = disposition.match(/filename="?([^";]+)"?/)?.[1] ?? staged.filename;
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    return staged.id;
-  };
-
-  const installUpdate = async () => {
-    if (!updateCheck?.available_version) return;
-    setUpdatePending(true);
-    try {
-      const backupId = await downloadPreUpdateBackup();
-      const job = await api<UpdateJob>("/api/updater/install", {
-        method: "POST",
-        body: JSON.stringify({ version: updateCheck.available_version, backup_id: backupId }),
-      });
-      setUpdateJob(job);
-      setConfirmUpdate(false);
-      notify("Backup downloaded and Kernel update job started", "info");
-      loadAudit();
-      loadUpdaterStatus();
-    } catch (error) {
-      notify((error as Error).message, "error");
-    } finally {
-      setUpdatePending(false);
-    }
-  };
-
-  const restoreBackup = async () => {
-    if (!backupFile) return;
-    const form = new FormData();
-    form.append("file", backupFile);
-    setBackupPending(true);
-    try {
-      await api("/api/backup/restore", { method: "POST", body: form });
-      notify("Kernel backup restored");
-      setBackupFile(undefined);
-      if (backupInputRef.current) backupInputRef.current.value = "";
-      window.location.reload();
-    } catch (error) {
-      notify((error as Error).message, "error");
-    } finally {
-      setBackupPending(false);
-    }
-  };
-
-  return (
-    <section className="settings-stack">
-      <section className="settings-section">
-        <header><h2>APPEARANCE</h2><span>Colors and primary navigation behavior</span></header>
-        <form className="settings-content appearance-form" onSubmit={saveAppearance}>
-          {(["dark", "light", "accent"] as const).map((name) => (
-            <label key={name} className="color-row">
-              <span>{name}</span>
-              <input
-                type="color"
-                value={draft.colors[name]}
-                onChange={(event) => setDraft({
-                  ...draft,
-                  colors: { ...draft.colors, [name]: event.target.value },
-                })}
-              />
-              <input
-                type="text"
-                pattern="#[0-9a-fA-F]{6}"
-                value={draft.colors[name]}
-                onChange={(event) => setDraft({
-                  ...draft,
-                  colors: { ...draft.colors, [name]: event.target.value },
-                })}
-              />
-            </label>
-          ))}
-          <label className="toggle-row">
-            <input
-              type="checkbox"
-              checked={!draft.sidebar_auto_hide}
-              disabled={appearancePending}
-              onChange={(event) => void setSidebarFixed(event.target.checked)}
-            />
-            <span>Keep sidebar fixed on screen</span>
-          </label>
-          <div className="row-actions">
-            <button
-              type="button"
-              onClick={() => setDraft((current) => ({
-                ...current,
-                colors: { dark: "#000000", light: "#ffffff", accent: "#00a8ff" },
-                sidebar_auto_hide: true,
-              }))}
-            >
-              Reset
-            </button>
-            <button type="submit" disabled={appearancePending}>
-              {appearancePending ? "Saving..." : "Save appearance"}
-            </button>
-          </div>
-        </form>
-      </section>
-
-      <section className="settings-section">
-        <header><h2>DOCUMENTS</h2><span>Uploads and immutable revisions</span></header>
-        <div className="settings-content document-managers">
-          <DocumentManager type="overview" notify={notify} onChanged={loadAudit} />
-          <DocumentManager type="constitution" notify={notify} onChanged={loadAudit} />
-        </div>
-      </section>
-
-      <section className="settings-section">
-        <header><h2>SECURITY</h2><span>Single-operator access</span></header>
-        <form className="settings-content form-grid" onSubmit={changePassword}>
-          <label><span>Current password</span><input type="password" autoComplete="current-password" required value={password.current} onChange={(event) => setPassword({ ...password, current: event.target.value })} /></label>
-          <label><span>New password</span><input type="password" autoComplete="new-password" required value={password.next} onChange={(event) => setPassword({ ...password, next: event.target.value })} /></label>
-          <label><span>Repeat new password</span><input type="password" autoComplete="new-password" required value={password.repeat} onChange={(event) => setPassword({ ...password, repeat: event.target.value })} /></label>
-          <div className="row-actions"><button type="submit" disabled={passwordPending}>{passwordPending ? "Changing..." : "Change password"}</button></div>
-        </form>
-      </section>
-
-      <section className="settings-section">
-        <header><h2>BACKUP</h2><span>Export or restore the local Kernel state</span></header>
-        <div className="settings-content backup-row">
-          <p>The export includes documents, revisions, Register, Topology, settings and audit events.</p>
-          <div className="backup-actions">
-            <a className="button-link" href="/api/backup" download>Download backup</a>
-            <label className={`button-link ${backupPending ? "is-disabled" : ""}`}>
-              Restore backup
-              <input
-                ref={backupInputRef}
-                hidden
-                type="file"
-                accept=".zip,application/zip,.json,application/json"
-                disabled={backupPending}
-                onChange={(event) => setBackupFile(event.target.files?.[0])}
-              />
-            </label>
-          </div>
-        </div>
-      </section>
-
-      <section className="settings-section">
-        <header><h2>UPDATER</h2><span>Operator-triggered release discovery</span></header>
-        <div className="settings-content updater-settings">
-          <p className="hint">
-            Kernel reads repositories.kernel.url from Register and checks matching Kernel releases.
-            The local updater downloads and verifies the release, replaces only this VPS container,
-            checks health and rolls back on failure.
-          </p>
-          <div className={`updater-availability ${updaterStatus?.available ? "is-available" : "is-unavailable"}`} role="status">
-            <strong>{updaterStatus?.available ? "UPDATER AVAILABLE" : "UPDATER NOT INSTALLED"}</strong>
-            <span>
-              {updaterStatus?.available
-                ? `Local worker ${updaterStatus.version ?? ""}`.trim()
-                : updaterStatus?.message ?? "Updater status is loading."}
-            </span>
-          </div>
-          <button
-            type="button"
-            className="primary-action"
-            disabled={updatePending}
-            onClick={() => void checkForUpdates()}
-          >
-            {updatePending ? "Checking..." : "Check for updates"}
-          </button>
-          {updateCheck?.update_available && (
-            <button
-              type="button"
-              className="primary-action"
-              disabled={updatePending || !updaterStatus?.available}
-              onClick={() => setConfirmUpdate(true)}
-            >
-              Install update
-            </button>
-          )}
-          {updateCheck && (
-            <div className="updater-result" role="status">
-              <span>Installed</span><strong>{updateCheck.installed_version}</strong>
-              <span>Available</span><strong>{updateCheck.available_version ?? "No published release"}</strong>
-              <span>Status</span><strong>{updateCheck.update_available ? "UPDATE AVAILABLE" : "UP TO DATE"}</strong>
-              {updateCheck.release_url && (
-                <a href={updateCheck.release_url} target="_blank" rel="noreferrer">Open release notes</a>
-              )}
-            </div>
-          )}
-          {updateJob && (
-            <div className="updater-job" role="status">
-              <span>Job</span><strong>{updateJob.id}</strong>
-              <span>State</span><strong>{updateJob.state}</strong>
-              {updateJob.message && <p>{updateJob.message}</p>}
-            </div>
-          )}
-        </div>
-      </section>
-
-      <section className="settings-section">
-        <header className="logger-header">
-          <h2>LOGGER</h2>
-          <span>Recent operator and system actions</span>
-          <a className="button-link logger-download" href="/api/logs/download" download>
-            Download Logs Zip
-          </a>
-        </header>
-        <div className="settings-content logger-settings">
-          <label className="toggle-row logger-toggle">
-            <input
-              type="checkbox"
-              checked={draft.revision_request_logging}
-              disabled={loggerPending}
-              onChange={(event) => void setRevisionRequestLogging(event.target.checked)}
-            />
-            <span>Log every internal-service revision request, including 304 Not Modified</span>
-          </label>
-          <p className="hint logger-limits">
-            Retention is capped at {draft.audit_limits.max_entries.toLocaleString("en-US")} events,{" "}
-            {draft.audit_limits.retention_days} days, or {formatBytes(draft.audit_limits.max_bytes)}
-            {" "}on disk, whichever limit is reached first. Current stored log size:{" "}
-            {formatBytes(draft.audit_limits.stored_bytes)}.
-          </p>
-          <div className="audit-list">
-            {audit.map((event) => (
-              <div key={event.id}>
-                <span className={`audit-status is-${event.status}`}>{event.status}</span>
-                <strong>{event.action}</strong>
-                <span>{event.target}</span>
-                <span>{event.actor}</span>
-                <time dateTime={event.created_at}>{formatLogDate(event.created_at)}</time>
-              </div>
-            ))}
-            {!audit.length && <p className="muted">The audit log is empty.</p>}
-          </div>
-        </div>
-      </section>
-      {backupFile && (
-        <ConfirmDialog
-          title="RESTORE KERNEL BACKUP"
-          message={`Restore ${backupFile.name}?`}
-          detail="Current state remains represented by immutable revisions where possible. Operator credentials are not replaced."
-          confirmLabel="Restore"
-          pending={backupPending}
-          onConfirm={() => void restoreBackup()}
-          onClose={() => {
-            setBackupFile(undefined);
-            if (backupInputRef.current) backupInputRef.current.value = "";
-          }}
-        />
-      )}
-      {confirmUpdate && updateCheck?.available_version && (
-        <ConfirmDialog
-          title="INSTALL KERNEL UPDATE"
-          message={`Install Kernel ${updateCheck.available_version}?`}
-          detail="A full backup will be downloaded first. The local updater will verify release checksums and the immutable image digest, preserve volumes, run health checks and automatically roll back on failure."
-          confirmLabel="Download backup and install"
-          pending={updatePending}
-          onConfirm={() => void installUpdate()}
-          onClose={() => setConfirmUpdate(false)}
-        />
-      )}
-    </section>
-  );
-}
-
 export function SettingsPage({
   settings,
   onSettings,
@@ -1226,14 +778,6 @@ export function SettingsPage({
   const backupInputRef = useRef<HTMLInputElement>(null);
   const [updaterStatus, setUpdaterStatus] = useState<UpdaterStatus>();
   const [registerReachability, setRegisterReachability] = useState<"checking" | "reachable" | "unreachable">("checking");
-  const [updateCheck, setUpdateCheck] = useState<UpdateCheck>();
-  const [updateJob, setUpdateJob] = useState<UpdateJob>();
-  const [updatePending, setUpdatePending] = useState(false);
-  const [updateError, setUpdateError] = useState("");
-  const [updaterUpdate, setUpdaterUpdate] = useState<UpdateCheck>();
-  const [updaterUpdatePending, setUpdaterUpdatePending] = useState(false);
-  const [updaterUpdateError, setUpdaterUpdateError] = useState("");
-  const [confirmUpdate, setConfirmUpdate] = useState(false);
   const [audit, setAudit] = useState<AuditEvent[]>([]);
   const [auditPending, setAuditPending] = useState(false);
   const auditRef = useRef<AuditEvent[]>([]);
@@ -1256,12 +800,6 @@ export function SettingsPage({
         service: "updater",
         message: (error as Error).message,
       });
-    }
-    try {
-      const job = await api<UpdateJob | null>("/api/updater/last-job");
-      if (job) setUpdateJob(job);
-    } catch {
-      // A missing historical updater job does not block release discovery.
     }
   }, []);
 
@@ -1317,16 +855,6 @@ export function SettingsPage({
       .catch(() => { if (!disposed) setRegisterReachability("unreachable"); });
     return () => { disposed = true; };
   }, []);
-
-  useEffect(() => {
-    if (!updateJob || ["COMPLETED", "ROLLED_BACK", "FAILED", "ROLLBACK_FAILED"].includes(updateJob.state)) return;
-    const timer = window.setInterval(() => {
-      api<UpdateJob>(`/api/updater/jobs/${encodeURIComponent(updateJob.id)}`)
-        .then(setUpdateJob)
-        .catch((error: Error) => notify(error.message, "error"));
-    }, 1500);
-    return () => window.clearInterval(timer);
-  }, [notify, updateJob]);
 
   const loadAudit = useCallback(async () => {
     setAuditPending(true);
@@ -1522,73 +1050,6 @@ export function SettingsPage({
     }
   };
 
-  const checkForUpdates = useCallback(async () => {
-    setUpdatePending(true);
-    setUpdateError("");
-    try {
-      const result = await api<UpdateCheck>("/api/updater/check", { method: "POST" });
-      setUpdateCheck(result);
-    } catch (error) {
-      setUpdateError((error as Error).message);
-    } finally {
-      setUpdatePending(false);
-    }
-  }, []);
-
-  const openUpdates = () => {
-    setOpenSection("updates");
-    void checkForUpdates();
-  };
-
-  const checkUpdaterUpdate = async () => {
-    setUpdaterUpdatePending(true);
-    setUpdaterUpdateError("");
-    try {
-      const result = await api<UpdateCheck>("/api/updater/self-update/check", { method: "POST" });
-      setUpdaterUpdate(result);
-      notify(result.update_available ? `Updater ${result.available_version} is available` : "Updater is up to date", "info");
-    } catch (error) {
-      const message = (error as Error).message;
-      setUpdaterUpdateError(message);
-      notify(message, "error");
-    } finally {
-      setUpdaterUpdatePending(false);
-    }
-  };
-
-  const stageBackupAndInstall = async () => {
-    if (!updateCheck?.available_version) return;
-    setUpdatePending(true);
-    try {
-      const staged = await api<{ id: string; filename: string; download_url: string }>("/api/backups", { method: "POST" });
-      await downloadBlob(staged.download_url, staged.filename);
-      const job = await api<UpdateJob>("/api/updater/install", {
-        method: "POST",
-        body: JSON.stringify({ version: updateCheck.available_version, backup_id: staged.id }),
-      });
-      setUpdateJob(job);
-      setConfirmUpdate(false);
-      notify("Backup downloaded; update job started", "info");
-    } catch (error) {
-      notify((error as Error).message, "error");
-    } finally {
-      setUpdatePending(false);
-    }
-  };
-
-  const rollbackUpdate = async () => {
-    if (!updateJob) return;
-    setUpdatePending(true);
-    try {
-      setUpdateJob(await api<UpdateJob>(`/api/updater/jobs/${encodeURIComponent(updateJob.id)}/rollback`, { method: "POST" }));
-      notify("Rollback requested", "info");
-    } catch (error) {
-      notify((error as Error).message, "error");
-    } finally {
-      setUpdatePending(false);
-    }
-  };
-
   const setRevisionLogging = async (enabled: boolean) => {
     setSettingsPending(true);
     try {
@@ -1688,7 +1149,7 @@ export function SettingsPage({
           <input ref={backupInputRef} hidden type="file" accept=".zip,application/zip,.json,application/json" onChange={(event) => { const file = event.target.files?.[0]; if (!file) return; setOpenSection("backup"); void inspectBackup(file); }} />
         </div>
         <div className="settings-group backup-neptune-group">
-          <h3>Automatic backup to Saturn</h3>
+          <h3>Automatic backup to Saturn</h3><button type="button" className="section-action" onClick={() => openKernelUpdates("neptune")}>Check Neptune for updates</button>
           <p>Schedules, remote runs and Neptune fleet status are managed only from Saturn → Synchronization. Manual Kernel snapshot download and restore remain here.</p>
           <div className="reachability-row"><span>Local Neptune agent:</span><strong className={neptune?.linked ? "is-reachable" : "is-unreachable"}>{neptune?.linked ? "Linked to Saturn" : neptune?.installed ? "Detected · not linked" : "Not installed"}<i aria-hidden="true" /></strong></div>
           {!neptune?.linked && <button type="button" className="section-action" disabled={!updaterStatus?.available || neptunePending} onClick={() => setNeptuneDialogOpen(true)}>Initialize Neptune</button>}
@@ -1713,13 +1174,11 @@ export function SettingsPage({
             <strong className={`is-${registerReachability}`}>{registerReachability === "reachable" ? "Service Reachability" : registerReachability === "unreachable" ? "Service Unavailable" : "Checking"}<i aria-hidden="true" /></strong>
           </div>
         </div>
-        <button type="button" className="section-action update-check-action" disabled={updatePending} onClick={openUpdates}>{updatePending ? "Checking..." : "Check for updates"}</button>
+        <button type="button" className="section-action update-check-action" onClick={() => openKernelUpdates()}>Check for updates</button>
         <div className="settings-group updater-version-group">
           <h3>Updater version</h3>
-          <SelfUpdateButton enabled={updaterStatus?.available === true} start={() => api("/api/updater/self-update/install", { method: "POST" })} read={id => api(`/api/updater/jobs/${encodeURIComponent(id)}`)} />
-          <p>Current installed version: {updaterStatus?.version ?? "unavailable"}{updaterUpdate?.available_version ? ` · latest ${updaterUpdate.available_version}` : ""}</p>
-          <button type="button" className="section-action" disabled={!updaterStatus?.available || updaterUpdatePending} onClick={() => void checkUpdaterUpdate()}>{updaterUpdatePending ? "Checking..." : "Check Updater for updates"}</button>
-          {updaterUpdateError && <p className="inline-error" role="alert">{updaterUpdateError}</p>}
+          <p>Current installed version: {updaterStatus?.version ?? "unavailable"}</p>
+          <button type="button" className="section-action" onClick={() => openKernelUpdates("updater")}>Check Updater for updates</button>
 
         </div>
       </div>
@@ -1849,21 +1308,6 @@ export function SettingsPage({
         </Modal>
       )}
 
-      {openSection === "updates" && (
-        <Modal title="Updates" width={760} onClose={() => !updatePending && setOpenSection(undefined)}>
-          <div className="updater-settings">
-            <div className="updater-result"><span>Installed</span><strong>{updateCheck?.installed_version ?? updaterStatus?.kernel_version ?? "Loading"}</strong><span>Updater</span><strong>{updaterStatus?.available ? `Available ${updaterStatus.version ?? ""}` : "Unavailable"}</strong><span>Registry</span><strong>{updatePending ? "Checking" : updateError ? "Failed" : updateCheck ? "Checked" : "Not checked"}</strong></div>
-            {updateError && <p className="login-error" role="alert">{updateError}</p>}
-            {updateCheck && <div className="update-discovery"><h3>Discovery</h3><p>{updateCheck.update_available ? `Kernel ${updateCheck.available_version} is available.` : "No newer compatible Kernel release was found."}</p><p className="hint">GitHub release identity and semantic version are checked here. Artifact digests and health are verified by the privileged updater during installation.</p>{updateCheck.release_url && <a href={updateCheck.release_url} target="_blank" rel="noreferrer">Release notes</a>}</div>}
-            <div className="dialog-actions"><button type="button" disabled={updatePending} onClick={() => void checkForUpdates()}>{updatePending ? "Checking..." : "Check again"}</button>{updateCheck?.update_available && <button type="button" disabled={updatePending || !updaterStatus?.available} onClick={() => setConfirmUpdate(true)}>Install {updateCheck.available_version}</button>}</div>
-            {updateJob && <div className="updater-job" role="status"><span>Job</span><strong>{updateJob.id}</strong><span>State</span><strong>{updateJob.state}</strong>{updateJob.message && <p>{updateJob.message}</p>}{updateJob.rollback_available && <button type="button" className="danger" disabled={updatePending} onClick={() => void rollbackUpdate()}>Rollback</button>}</div>}
-          </div>
-        </Modal>
-      )}
-
-      {confirmUpdate && updateCheck?.available_version && (
-        <ConfirmDialog title="Install KERNEL update" message={`Install KERNEL ${updateCheck.available_version}?`} detail="A full backup is created and downloaded first. The updater then verifies artifacts, preserves volumes, checks service health and exposes rollback when available." confirmLabel="Create backup and install" pending={updatePending} onConfirm={() => void stageBackupAndInstall()} onClose={() => setConfirmUpdate(false)} />
-      )}
     </section>
   );
 }

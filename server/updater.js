@@ -80,18 +80,11 @@ export async function checkGitHubRelease({
   if (!Array.isArray(releases)) {
     throw Object.assign(new Error("GitHub returned an invalid releases response"), { status: 502 });
   }
-  const prefixed = releases.filter(
-    (release) => !release.draft
-      && String(release.tag_name ?? "").toLowerCase().startsWith(`${service.toLowerCase()}-v`),
-  );
-  const candidates = prefixed.length
-    ? prefixed
-    : releases.filter(
-      (release) => !release.draft && /^v\d+\.\d+\.\d+/.test(String(release.tag_name ?? "")),
-    );
+  const candidates = releases.filter(release => !release.draft && !release.prerelease
+    && String(release.tag_name ?? "").startsWith(`${service}-v`));
   const available = candidates
     .map((release) => ({ release, version: releaseVersion(release.tag_name, service) }))
-    .filter((item) => item.version)
+    .filter((item) => /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(item.version ?? ""))
     .sort((left, right) => compareVersions(right.version, left.version))[0];
   return {
     service,

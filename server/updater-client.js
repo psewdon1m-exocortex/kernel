@@ -64,6 +64,7 @@ function request(socketPath, controlToken, method, route, body, timeoutMs = 10_0
 
 export function createUpdaterClient(socketPath, controlToken = "") {
   return {
+    request(method, route, body) { return request(socketPath, controlToken, method, route, body, 90_000); },
     async status() {
       try {
         const value = await request(socketPath, "", "GET", "/v1/health");

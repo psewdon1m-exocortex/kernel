@@ -79,6 +79,12 @@ describe("Kernel API", () => {
       }),
       updaterControlToken: "test-updater-control-token",
       updaterClient: {
+        async request(method, route, payload) {
+          if (route === "/v2/check") return { component: payload.component, installed_version: "0.1.1", available_version: "0.2.0", update_available: true, updater_version: "0.4.10", protocol: 2 };
+          if (route === "/v2/updates") { submittedUpdatePayload = payload; return {id: "job-kernel-1",state:"REQUESTED"}; }
+          if (route.startsWith("/v1/jobs?")) return {jobs: []};
+          throw new Error("Unexpected updater route " + route);
+        },
         async status() {
           return {
             installed: true,
@@ -86,6 +92,7 @@ describe("Kernel API", () => {
             status: "ok",
             service: "updater",
             version: "0.1.0",
+            update_protocol: 2,
             busy: false,
           };
         },
@@ -793,25 +800,19 @@ describe("Kernel API", () => {
     assert.equal(updaterUpdate.body.available_version, "0.1.1");
     assert.equal(updaterUpdate.body.update_available, true);
     assert.equal(updaterUpdate.body.repository_url, "https://github.com/psewdon1m-exocortex/updater");
-    const stagedBackup = await agent.post("/api/backups");
-    assert.equal(stagedBackup.status, 201);
-    const stagedDownload = await agent
-      .get(stagedBackup.body.download_url)
-      .buffer(true)
-      .parse((response, callback) => {
-        const chunks = [];
-        response.on("data", (chunk) => chunks.push(chunk));
-        response.on("end", () => callback(null, Buffer.concat(chunks)));
-      });
-    assert.equal(stagedDownload.status, 200);
-    assert.match(stagedDownload.headers["content-type"], /^application\/zip/);
-    assert.match(stagedDownload.headers["content-disposition"], /kernel-pre-update-[0-9a-f-]+\.zip/);
-    const stagedArchive = unzipSync(new Uint8Array(stagedDownload.body));
-    assert.ok(stagedArchive["manifest.json"]);
-    assert.ok(stagedArchive["data/kernel.json"]);
-    const install = await agent
-      .post("/api/updater/install")
-      .send({ version: "0.2.0", backup_id: stagedBackup.body.id });
+    assert.equal((await agent.post("/api/backups")).status, 410);
+    const stagedDownload = await agent.post("/api/update-flow/backup").send({ version: "0.2.0" }).buffer(true)
+      .parse((response, callback) => { const chunks=[];response.on("data",chunk=>chunks.push(chunk));response.on("end",()=>callback(null,Buffer.concat(chunks))); });
+    assert.equal(stagedDownload.status,200);
+    const receipt = stagedDownload.headers["x-update-receipt"];
+    assert.ok(receipt);
+    assert.equal((await agent.post("/api/updater/install").send({version:"0.2.0",backup_id:"legacy-id"})).status,426);
+    assert.equal((await agent.post("/api/update-flow/install/kernel").set("Content-Type","application/octet-stream").set("X-Update-Receipt",receipt).send(stagedDownload.body)).status,400);
+    assert.equal((await agent.post("/api/update-flow/install/kernel").set("Content-Type","application/octet-stream").set("X-Update-Saved","1").set("X-Update-Receipt",receipt+"x").send(stagedDownload.body)).status,400);
+    const install = await agent.post("/api/update-flow/install/kernel").set("Content-Type","application/octet-stream")
+      .set("X-Update-Saved","1").set("X-Update-Receipt",receipt).send(stagedDownload.body);
+    assert.deepEqual(Buffer.from(submittedUpdatePayload.backup.data_base64,"base64"),stagedDownload.body);
+    assert.ok(!fs.existsSync(path.join(dataDir,"pre-update-backups")) || fs.readdirSync(path.join(dataDir,"pre-update-backups")).length===0);
     assert.equal(install.status, 202);
     assert.equal(install.body.state, "REQUESTED");
     const lastJob = await agent.get("/api/updater/last-job");

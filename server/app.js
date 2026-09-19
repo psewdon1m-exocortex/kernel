@@ -1,3 +1,4 @@
+import { mountUpdateFlow } from "./update-flow.js";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1425,23 +1426,17 @@ export function createKernelApp(options) {
     } catch (error) { next(error); }
   });
 
+  mountUpdateFlow(app, { prefix: "/api/update-flow", service: "kernel", authorize: requireOperator, headId: updaterHeadId,
+    token: () => updaterControlToken, client: updaterClient,
+    buildBackup: () => ({ archive: buildKernelBackupArchive(store.exportBackup(), version), filename: `kernel-${new Date().toISOString().replaceAll(":", "-")}.zip` }),
+    onJob: job => store.setLastUpdateJobId(job.id),
+  });
   const stagedBackupDir = path.join(dataDir, "pre-update-backups");
+  // Retire only updater-owned staging files; user backup exports are untouched.
+  if (fs.existsSync(stagedBackupDir)) for (const entry of fs.readdirSync(stagedBackupDir, { withFileTypes: true })) {
+    if (entry.isFile() && /^[0-9a-f-]{36}\.zip(?:\.tmp)?$/i.test(entry.name)) fs.rmSync(path.join(stagedBackupDir, entry.name));
+  }
   const stagedRestoreDir = path.join(dataDir, "restore-inspections");
-  const pruneStagedBackups = () => {
-    fs.mkdirSync(stagedBackupDir, { recursive: true });
-    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-    const entries = fs.readdirSync(stagedBackupDir, { withFileTypes: true })
-      .filter((entry) => entry.isFile() && (entry.name.endsWith(".zip") || entry.name.endsWith(".json")))
-      .map((entry) => {
-        const target = path.join(stagedBackupDir, entry.name);
-        return { target, modified: fs.statSync(target).mtimeMs };
-      })
-      .sort((left, right) => right.modified - left.modified);
-    entries.forEach((entry, index) => {
-      if (index >= 10 || entry.modified < cutoff) fs.rmSync(entry.target, { force: true });
-    });
-  };
-
   const pruneRestoreInspections = () => {
     fs.mkdirSync(stagedRestoreDir, { recursive: true });
     const cutoff = Date.now() - 60 * 60 * 1000;
@@ -1457,46 +1452,7 @@ export function createKernelApp(options) {
     });
   };
 
-  app.post("/api/backups", requireOperator, (req, res, next) => {
-    try {
-      pruneStagedBackups();
-      const id = randomUUID();
-      const filename = `kernel-pre-update-${id}.zip`;
-      const backupBody = buildKernelBackupArchive(store.exportBackup(), version);
-      if (backupBody.byteLength > MAX_BACKUP_BYTES) {
-        throw Object.assign(new Error("Kernel backup exceeds the updater limit"), { status: 413 });
-      }
-      const target = path.join(stagedBackupDir, `${id}.zip`);
-      fs.writeFileSync(`${target}.tmp`, backupBody, { mode: 0o600 });
-      fs.renameSync(`${target}.tmp`, target);
-      const checksum = createHash("sha256").update(backupBody).digest("hex");
-      store.audit(safeActor(req), "backup.staged", "kernel-update", "success", { id, checksum });
-      res.status(201).json({
-        id,
-        filename,
-        checksum,
-        download_url: `/api/backups/${id}`,
-      });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  app.get("/api/backups/:id", requireOperator, (req, res, next) => {
-    try {
-      if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) {
-        throw Object.assign(new Error("Backup ID is invalid"), { status: 400 });
-      }
-      const target = path.join(stagedBackupDir, `${req.params.id}.zip`);
-      if (!fs.existsSync(target)) {
-        throw Object.assign(new Error("Staged backup was not found"), { status: 404 });
-      }
-      res.download(target, `kernel-pre-update-${req.params.id}.zip`);
-    } catch (error) {
-      next(error);
-    }
-  });
-
+  app.post("/api/backups", requireOperator, (_req, res) => res.status(410).json({ error: "Use the Updates dialog to download a signed pre-update ZIP" }));
   app.get("/api/updater/status", requireOperator, async (_req, res, next) => {
     try {
       res.json({ ...(await updaterClient.status()), kernel_version: version });
@@ -1505,53 +1461,7 @@ export function createKernelApp(options) {
     }
   });
 
-  app.post("/api/updater/install", requireOperator, async (req, res, next) => {
-    try {
-      const versionToInstall = typeof req.body?.version === "string"
-        ? req.body.version.trim()
-        : "";
-      const backupId = typeof req.body?.backup_id === "string"
-        ? req.body.backup_id.trim()
-        : "";
-      if (!versionToInstall) {
-        throw Object.assign(new Error("Select a published Kernel release"), { status: 400 });
-      }
-      if (!/^[0-9a-f-]{36}$/i.test(backupId)) {
-        throw Object.assign(new Error("Download a fresh Kernel backup before installing"), { status: 400 });
-      }
-      const backupPath = path.join(stagedBackupDir, `${backupId}.zip`);
-      if (!fs.existsSync(backupPath)) {
-        throw Object.assign(new Error("The staged Kernel backup is unavailable"), { status: 409 });
-      }
-      if (Date.now() - fs.statSync(backupPath).mtimeMs > 15 * 60 * 1000) {
-        throw Object.assign(new Error("The staged Kernel backup is older than 15 minutes"), { status: 409 });
-      }
-      const backupBody = fs.readFileSync(backupPath);
-      const checksum = createHash("sha256").update(backupBody).digest("hex");
-      const job = await updaterClient.createUpdate({
-        request_id: req.requestId,
-        head_id: updaterHeadId,
-        service: "kernel",
-        version: versionToInstall,
-        backup: {
-          filename: `kernel-pre-update-${backupId}.zip`,
-          sha256: checksum,
-          data_base64: backupBody.toString("base64"),
-        },
-      });
-      store.setLastUpdateJobId(job.id);
-      store.audit(safeActor(req), "updater.install.requested", "kernel", "success", {
-        job_id: job.id,
-        version: versionToInstall,
-        backup_checksum: checksum,
-      });
-      fs.rmSync(backupPath, { force: true });
-      res.status(202).json(job);
-    } catch (error) {
-      next(error);
-    }
-  });
-
+  app.post("/api/updater/install", requireOperator, (_req, res) => res.status(426).json({ error: "Use the saved-copy update protocol; a backup ID alone cannot authorize installation" }));
   app.get("/api/updater/jobs/:id", requireOperator, async (req, res, next) => {
     try {
       res.json(await updaterClient.job(req.params.id));
