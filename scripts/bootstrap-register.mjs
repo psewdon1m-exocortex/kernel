@@ -32,12 +32,12 @@ if (command === "template") {
     const headers = { "Content-Type": "application/json", Cookie: cookie, Origin: url.origin };
     try {
       if (command === "apply") {
-        const response = await fetch(new URL("/api/register/profile", url), { method: "PUT", redirect: "error", headers, body: JSON.stringify({ bindings, prune: argumentsMap.get("--prune-outside-profile") === "true" }) });
-        if (!response.ok) throw new Error(`Register profile rejected (HTTP ${response.status}); inspect /api/register/profile before pruning`);
+        const response = await fetch(new URL("/api/register/profile", url), { method: "PUT", redirect: "error", headers, body: JSON.stringify({ bindings }) });
+        if (!response.ok) throw new Error(`Register profile rejected (HTTP ${response.status}); inspect /api/register/profile`);
       }
       const response = await fetch(new URL("/api/register/profile/check", url), { method: "POST", redirect: "error", headers, body: "{}" });
       if (!response.ok) throw new Error(`Register readiness failed (HTTP ${response.status}); review bindings and Volt availability`);
       process.stdout.write(JSON.stringify(await response.json(), null, 2) + "\n");
     } finally { await fetch(new URL("/api/auth/logout", url), { method: "POST", redirect: "error", headers, body: "{}" }).catch(() => undefined); }
   }
-} else throw new Error("Usage: bootstrap-register.mjs template | validate --bindings FILE | apply --bindings FILE --kernel-url URL --access-key-file FILE [--prune-outside-profile true] | check --kernel-url URL --access-key-file FILE");
+} else throw new Error("Usage: bootstrap-register.mjs template | validate --bindings FILE | apply --bindings FILE --kernel-url URL --access-key-file FILE | check --kernel-url URL --access-key-file FILE");

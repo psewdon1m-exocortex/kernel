@@ -1078,9 +1078,7 @@ export function createKernelApp(options) {
   app.put("/api/register/profile", requireOperator, (req, res, next) => {
     try {
       const inputs = validateProfileBindings(req.body?.bindings, deploymentProfile);
-      const current = inspectRegisterProfile(store.listRegisterEntries(), deploymentProfile);
-      if (current.extra.length && req.body?.prune !== true) return res.status(409).json({ error: "Register has entries outside the six-service profile; review them before pruning", profile: current });
-      store.upsertRegisterEntries(inputs, safeActor(req), { replace: req.body?.prune === true });
+      store.upsertRegisterEntries(inputs, safeActor(req));
       res.json(inspectRegisterProfile(store.listRegisterEntries(), deploymentProfile));
     } catch (error) { next(error); }
   });

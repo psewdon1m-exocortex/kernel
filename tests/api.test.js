@@ -345,6 +345,47 @@ describe("Kernel API", () => {
     assert.equal(versions.body.versions[0].source_revision, initial.body.revision);
   });
 
+  test("Register profile readiness ignores and preserves additional operator records", async () => {
+    await login();
+    const customReference = "volt://44444444-4444-4444-8444-444444444444/2";
+    const created = await agent
+      .post("/api/register/entries")
+      .send({ key: "services.custom.sni", value: customReference, description: "Custom service" });
+    assert.equal(created.status, 201);
+
+    const profile = await agent.get("/api/register/profile");
+    assert.equal(profile.status, 200);
+    assert.equal(profile.body.ready, true);
+    assert.equal(Object.hasOwn(profile.body, "extra"), false);
+
+    const required = JSON.parse(fs.readFileSync(path.resolve("data/defaults/register.json"), "utf8"));
+    const register = await agent.get("/api/register");
+    const bindings = Object.fromEntries(required.map(({ key }) => [key, register.body.values[key]]));
+    for (const { key } of required) {
+      let value = "configured";
+      if (key.startsWith("repositories.")) value = `https://github.com/example/${key.split(".")[1]}`;
+      else if (key.endsWith(".sni")) value = `${key.split(".")[1]}.example.com`;
+      else if (key.endsWith(".port")) value = "443";
+      else if (key.includes(".paths.") || key.endsWith(".health.path")) value = "/api/health";
+      else if (key.endsWith(".health.contract")) value = "public-readiness";
+      else if (key.endsWith(".saturn_slug")) value = `${key.split(".")[1]}-backup`;
+      else if (key.startsWith("intervals.")) value = "60";
+      voltValues.set(bindings[key], { value, visibility: "plain" });
+    }
+
+    const applied = await agent.put("/api/register/profile").send({ bindings, prune: true });
+    assert.equal(applied.status, 200);
+    assert.equal(applied.body.ready, true);
+    assert.equal(Object.hasOwn(applied.body, "extra"), false);
+    const afterApply = await agent.get("/api/register");
+    assert.equal(afterApply.body.values["services.custom.sni"], customReference);
+
+    const checked = await agent.post("/api/register/profile/check").send({});
+    assert.equal(checked.status, 200, JSON.stringify(checked.body));
+    assert.equal(checked.body.ready, true);
+    assert.equal(Object.hasOwn(checked.body, "extra"), false);
+  });
+
   test("legacy Register values are preserved for migration but blocked from machine publication", async () => {
     const legacyValue = "legacy-value-that-must-survive-until-migrated";
     app.locals.kernel.store.createRegisterEntry({

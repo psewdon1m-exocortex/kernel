@@ -4,6 +4,9 @@ This document specializes [Part 00 — system unification specification](https:/
 
 ## Unreleased
 
+- Treat the deployment profile as a required Register baseline: additional
+  operator-defined records no longer fail readiness or get pruned on apply.
+
 ## 0.2.14
 
 - Add a persistent Topology Map Focus control that synchronizes with Sidebar

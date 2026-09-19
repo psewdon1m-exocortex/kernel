@@ -6,7 +6,7 @@ and the shared-agent contracts in
 [Part 09](https://github.com/psewdon1m-exocortex/general/blob/main/PART_09_SERVICE_AGENTS_DEPLOYMENT_AND_LIFECYCLE.md) and
 [Part 10](https://github.com/psewdon1m-exocortex/general/blob/main/PART_10_SERVICE_AGENTS_UI_AND_OPERATOR_WORKFLOWS.md).
 
-The initial Register contains exactly 28 required keys for the six-service profile. Bind every value to a numeric volt://UUID/1..5 reference using scripts/bootstrap-register.mjs, then run the resolving profile check. Blank bindings fail closed. The full historical infrastructure seed is separate. Kernel authenticates callers, discovers the current Volt address through its bootstrap connection and forwards requests without storing resolved secrets. Recovery v3 retains identifiers, revisions, topology, documents, navigation and public settings; local trust credentials remain host-owned.
+The initial six-service profile requires 28 baseline Register keys. Additional operator-defined keys are valid and do not affect profile readiness. Bind every required value to a numeric volt://UUID/1..5 reference using scripts/bootstrap-register.mjs, then run the resolving profile check. Blank required bindings fail closed. The full historical infrastructure seed is separate. Kernel authenticates callers, discovers the current Volt address through its bootstrap connection and forwards requests without storing resolved secrets. Recovery v3 retains identifiers, revisions, topology, documents, navigation and public settings; local trust credentials remain host-owned.
 
 ## Trust and operator prerequisites
 

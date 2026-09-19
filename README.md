@@ -238,8 +238,7 @@ services.gryphon.sni
 services.gryphon.port
 ```
 
-Laboratory и Chronos остаются расширениями за пределами initial six-service
-profile. Для их карточек Dashboard в опубликованном Register должны
+Для карточек Laboratory и Chronos в опубликованном Register должны
 присутствовать ссылки на значения Volt:
 
 ```text

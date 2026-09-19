@@ -5,10 +5,9 @@ export function inspectRegisterProfile(entries, profile) {
   const provided = new Map(entries.map(entry => [entry.key, entry.value]));
   const missing = [...required].filter(key => !provided.has(key)).sort();
   const invalid = [...required].filter(key => provided.has(key) && !REFERENCE.test(String(provided.get(key)))).sort();
-  const extra = [...provided.keys()].filter(key => !required.has(key)).sort();
   const duplicates = entries.length !== provided.size;
-  return { schema: "exocortex.register.readiness.v1", profile: "six-services", ready: !missing.length && !invalid.length && !extra.length && !duplicates,
-    required: required.size, configured: required.size - missing.length - invalid.length, missing, invalid, extra, duplicates };
+  return { schema: "exocortex.register.readiness.v1", profile: "six-services", ready: !missing.length && !invalid.length && !duplicates,
+    required: required.size, configured: required.size - missing.length - invalid.length, missing, invalid, duplicates };
 }
 
 export function validateProfileBindings(bindings, profile) {
