@@ -1,4 +1,5 @@
 import { mountUpdateFlow } from "./update-flow.js";
+import { createBackupPolicy } from "./backup-policy.js";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -452,6 +453,14 @@ export function createKernelApp(options) {
     auditMaxBytes,
   });
   const storedVoltConnection = store.getVoltConnectionSettings();
+  const backupPolicy = createBackupPolicy({
+    client: neptuneClient, configured: () => Boolean(neptuneControlTokenFile),
+    readPending: () => JSON.parse(store.getSetting("backup_policy_restore") || "null"),
+    writePending: value => store.setSetting("backup_policy_restore", JSON.stringify(value)),
+  });
+  const currentBackup = async () => buildKernelBackupArchive({
+    ...store.exportBackup(), backup_policy: await backupPolicy.exportIntent(),
+  }, version);
   if ((!storedVoltConnection.url && voltUrl) || (!storedVoltConnection.encrypted_token && voltKernelToken)) {
     const migratedToken = !storedVoltConnection.encrypted_token && voltKernelToken
       ? encryptStoredSecret(voltKernelToken, sessionSecret)
@@ -1295,7 +1304,7 @@ export function createKernelApp(options) {
   app.post("/api/settings/password", requireOperator, changeAccessKey);
 
   app.get("/api/audit", requireOperator, (req, res) => {
-    res.json({ events: store.listAudit(normalizeLimit(req.query.limit, 200, 1000)) });
+    res.json({ events: typeof req.query.before === "string" ? store.listAuditBefore(req.query.before, normalizeLimit(req.query.limit, 100, 200)) : store.listAudit(normalizeLimit(req.query.limit, 200, 1000)) });
   });
 
   app.get("/api/audit/changes", requireOperator, (req, res, next) => {
@@ -1373,8 +1382,8 @@ export function createKernelApp(options) {
     res.send(Buffer.from(archive));
   });
 
-  app.get("/api/backup", requireOperator, (_req, res) => {
-    const archive = buildKernelBackupArchive(store.exportBackup(), version);
+  app.get("/api/backup", requireOperator, async (_req, res) => {
+    const archive = await currentBackup();
     const checksum = createHash("sha256").update(archive).digest("hex");
     store.audit("operator", "backup.download", "kernel", "success", { checksum });
     res.setHeader("Cache-Control", "no-store, private");
@@ -1384,9 +1393,15 @@ export function createKernelApp(options) {
     res.send(archive);
   });
 
-  app.post("/api/internal/neptune/backup", (req, res) => {
+  app.head("/api/internal/neptune/backup", (req, res) => {
+    if (!authorizeNeptuneExport(req)) return res.sendStatus(401);
+    store.db.prepare("SELECT 1").get();
+    return res.set("X-Neptune-Ready", "1").status(204).end();
+  });
+  app.post("/api/internal/neptune/backup", async (req, res) => {
     if (!authorizeNeptuneExport(req)) return res.status(401).json({ error: "Neptune export token is required" });
-    const archive = buildKernelBackupArchive(store.exportBackup(), version);
+    backupPolicy.assertExportReady();
+    const archive = await currentBackup();
     const checksum = createHash("sha256").update(archive).digest("hex");
     store.audit("neptune", "backup.export", "kernel", "success", { checksum, bytes: archive.byteLength });
     res.setHeader("Content-Type", "application/zip");
@@ -1404,12 +1419,17 @@ export function createKernelApp(options) {
   app.get("/api/neptune/availability", requireOperator, async (_req, res, next) => {
     try { res.json(await neptuneClient.availability()); } catch (error) { next(error); }
   });
+  app.get("/api/neptune/policy", requireOperator, async (_req, res) => res.json(await backupPolicy.read()));
+  app.put("/api/neptune/policy", requireOperator, async (req, res) => res.json(await backupPolicy.mutate(req.body)));
+  app.get("/api/neptune/policy/runs", requireOperator, async (_req, res) => res.json(await backupPolicy.runs()));
+  app.post("/api/neptune/policy/runs", requireOperator, async (req, res) => res.status(202).json(await backupPolicy.runs("POST", req.body)));
 
   app.post("/api/neptune/initialize", requireOperator, async (req, res, next) => {
     try {
       const code = String(req.body?.enrollment_code ?? "").trim();
       if (!/^[A-Za-z0-9_-]{32}$/.test(code)) throw Object.assign(new Error("Enter a valid 32-character Saturn setup code"), { status: 400 });
       const job = await updaterClient.initializeNeptune({
+        requestId: req.body?.request_id,
         headId: updaterHeadId, projectId: neptuneProjectId,
         exportUrl: `http://127.0.0.1:${String(process.env.KERNEL_LISTEN_PORT || 18180)}/api/internal/neptune/backup`, enrollmentCode: code,
       });
@@ -1418,16 +1438,8 @@ export function createKernelApp(options) {
     } catch (error) { next(error); }
   });
 
-  app.put("/api/neptune/schedule", requireOperator, async (req, res, next) => {
-    try {
-      const enabled = req.body?.enabled;
-      const intervalHours = Number(req.body?.interval_hours);
-      if (typeof enabled !== "boolean" || !Number.isInteger(intervalHours) || intervalHours < 1 || intervalHours > 8760) {
-        throw Object.assign(new Error("Neptune interval must be a whole number of hours between 1 and 8760"), { status: 400 });
-      }
-      await neptuneClient.schedule(enabled, intervalHours);
-      res.status(204).send();
-    } catch (error) { next(error); }
+  app.put("/api/neptune/schedule", requireOperator, (_req, res) => {
+    res.status(426).json({ message: "Use the service backup policy with a revision and request ID" });
   });
   app.get("/api/neptune/initializations/:id", requireOperator, async (req, res, next) => {
     try {
@@ -1436,8 +1448,8 @@ export function createKernelApp(options) {
     } catch (error) { next(error); }
   });
 
-  app.post("/api/neptune/runs", requireOperator, async (_req, res, next) => {
-    try { res.status(202).json(await neptuneClient.run()); } catch (error) { next(error); }
+  app.post("/api/neptune/runs", requireOperator, (_req, res) => {
+    res.status(426).json({ message: "Use the scoped policy run endpoint with a stable request ID" });
   });
 
   app.post("/api/neptune/update/check", requireOperator, async (req, res, next) => {
@@ -1469,7 +1481,7 @@ export function createKernelApp(options) {
 
   mountUpdateFlow(app, { prefix: "/api/update-flow", service: "kernel", authorize: requireOperator, headId: updaterHeadId,
     token: () => updaterControlToken, client: updaterClient,
-    buildBackup: () => ({ archive: buildKernelBackupArchive(store.exportBackup(), version), filename: `kernel-${new Date().toISOString().replaceAll(":", "-")}.zip` }),
+    buildBackup: async () => ({ archive: await currentBackup(), filename: `kernel-${new Date().toISOString().replaceAll(":", "-")}.zip` }),
     onJob: job => store.setLastUpdateJobId(job.id),
   });
   const stagedBackupDir = path.join(dataDir, "pre-update-backups");

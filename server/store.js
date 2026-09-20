@@ -4,6 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { expandDottedValues, registerChecksum } from "./machine-contract.js";
 import { exportRecoveryState, importRecoveryState } from "./recovery-state.js";
+import { restoredPolicyRecord } from "./backup-policy.js";
 
 function nowIso() {
   return new Date().toISOString();
@@ -1095,6 +1096,16 @@ export class KernelStore {
   }
 
   importBackup(backup, actor, registerValidator = null) {
+    const policy = restoredPolicyRecord(backup?.backup_policy);
+    return this.transaction(() => {
+      const result = this.importBackupState(backup, actor, registerValidator);
+      // The pending policy and restored domain data commit together.
+      this.setSetting("backup_policy_restore", JSON.stringify(policy));
+      return { ...result, backup_policy_pending: Boolean(policy) };
+    });
+  }
+
+  importBackupState(backup, actor, registerValidator = null) {
     if (backup?.format === "exocortex-kernel-backup" && Number(backup.version) === 3) {
       return importRecoveryState(this, backup.authoritative, actor, registerValidator);
     }

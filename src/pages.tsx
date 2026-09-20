@@ -1,5 +1,7 @@
+import { ServiceLogsPanel } from "./ServiceLogsPanel";
 import { openKernelUpdates } from "./update-flow.js";
-import { pendingAgentJob, waitForAgentJob, type AgentJob } from "./agent-job";
+import { openAgentInitialization, type InitializationJob } from "./agent-initialize.js";
+import { BackupPolicyPanel } from "./service-agents";
 import {
   useCallback,
   useEffect,
@@ -22,7 +24,6 @@ import {
   shortHash,
 } from "./components";
 import type {
-  AuditEvent,
   BackupInspection,
   DashboardCardId,
   DashboardMetric,
@@ -405,16 +406,6 @@ function ratioPercent(used: number | null | undefined, total: number | null | un
     : (used / total) * 100;
 }
 
-function formatLogDate(value: string | null | undefined) {
-  if (!value) return "N/A";
-  const date = new Date(value);
-  if (Number.isNaN(date.valueOf())) return value;
-  const pad = (part: number) => String(part).padStart(2, "0");
-  return [
-    `${pad(date.getDate())}.${pad(date.getMonth() + 1)}.${date.getFullYear()}`,
-    `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`,
-  ].join(" ");
-}
 
 function formatDuration(value: number | null | undefined) {
   if (value == null || !Number.isFinite(value)) return "N/A";
@@ -771,20 +762,11 @@ export function SettingsPage({
   const [voltPending, setVoltPending] = useState(false);
   const [backupPending, setBackupPending] = useState(false);
   const [neptune, setNeptune] = useState<NeptuneAvailability>();
-  const [neptuneDialogOpen, setNeptuneDialogOpen] = useState(false);
-  const [neptuneCode, setNeptuneCode] = useState("");
-  const [neptunePending, setNeptunePending] = useState(false);
   const [inspection, setInspection] = useState<BackupInspection>();
   const backupInputRef = useRef<HTMLInputElement>(null);
   const [updaterStatus, setUpdaterStatus] = useState<UpdaterStatus>();
   const [registerReachability, setRegisterReachability] = useState<"checking" | "reachable" | "unreachable">("checking");
-  const [audit, setAudit] = useState<AuditEvent[]>([]);
-  const [auditPending, setAuditPending] = useState(false);
-  const auditRef = useRef<AuditEvent[]>([]);
-
-  useEffect(() => {
-    auditRef.current = audit;
-  }, [audit]);
+  const [logRevision, setLogRevision] = useState(0);
 
   useEffect(() => () => onPreviewAccent(undefined), [onPreviewAccent]);
 
@@ -805,35 +787,33 @@ export function SettingsPage({
 
   useEffect(() => { void loadUpdaterState(); }, [loadUpdaterState]);
 
-  const loadNeptune = useCallback(() => {
-    api<NeptuneAvailability>("/api/neptune/availability").then(setNeptune).catch(() => setNeptune({ installed: false, linked: false, state: "unavailable" }));
+  const loadNeptune = useCallback(async () => {
+    try { setNeptune(await api<NeptuneAvailability>("/api/neptune/availability")); }
+    catch { setNeptune(previous => ({ installed: null, linked: null, ...previous, state: "unavailable" })); }
   }, []);
-  useEffect(() => {
-    loadNeptune();
-    const pending = pendingAgentJob();
-    if (!pending) return;
-    setNeptunePending(true);
-    void waitForAgentJob(pending, id => api<AgentJob>(`/api/neptune/initializations/${encodeURIComponent(id)}`))
-      .then(() => loadNeptune()).catch(error => notify((error as Error).message, "error"))
-      .finally(() => setNeptunePending(false));
-  }, [loadNeptune, notify]);
+  useEffect(() => { void loadNeptune(); const timer = setInterval(() => void loadNeptune(), 15000); return () => clearInterval(timer); }, [loadNeptune]);
 
-  const initializeNeptune = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!/^[A-Za-z0-9_-]{32}$/.test(neptuneCode)) { notify("Enter the 32-character setup code from Saturn", "error"); return; }
-    setNeptunePending(true);
-    try {
-      const job = await api<AgentJob>("/api/neptune/initialize", { method: "POST", body: JSON.stringify({ enrollment_code: neptuneCode }) });
-      setNeptuneCode("");
-      await waitForAgentJob(job, id => api<AgentJob>(`/api/neptune/initializations/${encodeURIComponent(id)}`));
+  const initializeNeptune = () => openAgentInitialization({
+    component: "Neptune", service: "kernel",
+    description: "Connect this service to the local Neptune agent. An existing agent is reused.",
+    profile: "Required pipeline: archive backup. Schedules are managed here after enrollment.",
+    codeLabel: "One-time setup code",
+    initialize: input => api<InitializationJob>("/api/neptune/initialize", { method: "POST", body: JSON.stringify(input) }),
+    observe: id => api<InitializationJob>(`/api/neptune/initializations/${encodeURIComponent(id || "")}`),
+    recover: async hint => {
+      if (hint?.id) return api<InitializationJob>(`/api/neptune/initializations/${encodeURIComponent(hint.id)}`);
+      const result = await api<{ jobs: (InitializationJob & { service?: string })[] }>("/api/update-flow/jobs");
+      return result.jobs.find(job => job.service === "neptune-initialization" &&
+        (hint?.request_id ? job.request_id === hint.request_id : !["COMPLETED", "FAILED"].includes(job.state)));
+    },
+    verify: async () => {
       const availability = await api<NeptuneAvailability>("/api/neptune/availability");
       setNeptune(availability);
-      if (!availability.linked) throw new Error("Neptune enrollment completed but its project health is unavailable");
-      setNeptuneDialogOpen(false);
-      notify("Neptune is linked and ready.", "success");
-    } catch (error) { notify((error as Error).message, "error"); }
-    finally { setNeptunePending(false); }
-  };
+      return { ready: availability.state === "linked" && availability.linked === true,
+        message: "The scoped Neptune connection has not been verified." };
+    },
+    onComplete: loadNeptune,
+  });
 
   const loadVoltConnection = useCallback(async () => {
     try {
@@ -856,39 +836,7 @@ export function SettingsPage({
     return () => { disposed = true; };
   }, []);
 
-  const loadAudit = useCallback(async () => {
-    setAuditPending(true);
-    try {
-      const result = await api<{ events: AuditEvent[] }>("/api/audit?limit=100");
-      setAudit(result.events.slice(0, 1000));
-    } catch (error) {
-      notify((error as Error).message, "error");
-    } finally {
-      setAuditPending(false);
-    }
-  }, [notify]);
-
-  useEffect(() => {
-    void loadAudit();
-    const poll = async () => {
-      if (document.hidden || !auditRef.current[0]) return;
-      try {
-        const result = await api<{ events: AuditEvent[] }>(
-          `/api/audit/changes?after=${encodeURIComponent(auditRef.current[0].id)}&limit=100`,
-        );
-        if (!result.events.length) return;
-        setAudit((current) => {
-          const known = new Set(current.map((event) => event.id));
-          const incoming = result.events.filter((event) => !known.has(event.id)).reverse();
-          return [...incoming, ...current].slice(0, 1000);
-        });
-      } catch (error) {
-        notify((error as Error).message, "error");
-      }
-    };
-    const timer = window.setInterval(poll, 3000);
-    return () => window.clearInterval(timer);
-  }, [loadAudit, notify]);
+  const loadAudit = useCallback(async () => { setLogRevision(value => value + 1); }, []);
 
   const saveAppearance = async (event: FormEvent) => {
     event.preventDefault();
@@ -1059,20 +1007,6 @@ export function SettingsPage({
     }
   };
 
-  const loadOlderAudit = async () => {
-    const cursor = audit.at(-1)?.id;
-    if (!cursor || audit.length >= 1000) return;
-    setAuditPending(true);
-    try {
-      const result = await api<{ events: AuditEvent[] }>(`/api/audit/older?before=${encodeURIComponent(cursor)}&limit=100`);
-      setAudit((current) => [...current, ...result.events].slice(0, 1000));
-    } catch (error) {
-      notify((error as Error).message, "error");
-    } finally {
-      setAuditPending(false);
-    }
-  };
-
   const moveSection = (source: SettingsSection, target: SettingsSection, after: boolean) => {
     if (source === target) return;
     const order = settings.presentation.settings_order.filter((id) => id !== source);
@@ -1149,11 +1083,13 @@ export function SettingsPage({
           <input ref={backupInputRef} hidden type="file" accept=".zip,application/zip,.json,application/json" onChange={(event) => { const file = event.target.files?.[0]; if (!file) return; setOpenSection("backup"); void inspectBackup(file); }} />
         </div>
         <div className="settings-group backup-neptune-group">
-          <h3>Automatic backup to Saturn</h3><button type="button" className="section-action" onClick={() => openKernelUpdates("neptune")}>Check Neptune for updates</button>
-          <p>Schedules, remote runs and Neptune fleet status are managed only from Saturn → Synchronization. Manual Kernel snapshot download and restore remain here.</p>
-          <div className="reachability-row"><span>Local Neptune agent:</span><strong className={neptune?.linked ? "is-reachable" : "is-unreachable"}>{neptune?.linked ? "Linked to Saturn" : neptune?.installed ? "Detected · not linked" : "Not installed"}<i aria-hidden="true" /></strong></div>
-          {!neptune?.linked && <button type="button" className="section-action" disabled={!updaterStatus?.available || neptunePending} onClick={() => setNeptuneDialogOpen(true)}>Initialize Neptune</button>}
+          <h3>Automatic backup to Saturn</h3>
+          <p>Set the archive schedule and request backups here. Neptune transfers the archive to remote storage.</p>
+          <div className="reachability-row"><span>Local Neptune agent:</span><strong className={neptune?.state === "linked" ? "is-reachable" : "is-unreachable"}>{!neptune ? "Checking" : neptune.state === "linked" ? "Linked" : neptune.state === "unlinked" ? "Not linked" : neptune.state === "authorization_failed" ? "Authorization failed" : neptune.linked ? "Unavailable · last known linked" : "Unavailable · installation unknown"}<i aria-hidden="true" /></strong></div>
+          <button type="button" className="section-action" onClick={initializeNeptune}>Initialize</button>
+          <BackupPolicyPanel service="kernel" base="/api/neptune/policy" />
         </div>
+        <div className="settings-group"><h3>Neptune version</h3><p>Current installed version: {neptune?.version ?? "Unavailable"}</p><button type="button" className="section-action" onClick={() => openKernelUpdates("neptune")}>Check Neptune for updates</button></div>
       </div>
     );
 
@@ -1191,14 +1127,8 @@ export function SettingsPage({
             <p>Compact operator and internal-service action stream.</p>
             <label className="toggle-row"><input type="checkbox" checked={settings.revision_request_logging} disabled={settingsPending} onChange={(event) => void setRevisionLogging(event.target.checked)} /><span>Log internal-service revision requests</span></label>
           </div>
-          <a className="button-link" href="/api/logs/download" download>Download archived logs</a>
         </div>
-        <div className="audit-list" role="log">
-          <div className="audit-head"><strong>TYPE</strong><strong>BODY</strong><strong>TIME</strong></div>
-          {audit.map((event) => <div key={event.id}><span className={`audit-status is-${event.status}`}>/{event.status.toUpperCase()}</span><span>{event.action} · {event.target} · {event.actor}</span><time dateTime={event.created_at}>{formatLogDate(event.created_at)}</time></div>)}
-          {!audit.length && <p className="muted">{auditPending ? "Loading events..." : "The audit log is empty."}</p>}
-        </div>
-        <button type="button" className="compact-action" disabled={auditPending || audit.length >= 1000 || !audit.length} onClick={() => void loadOlderAudit()}>{auditPending ? "Loading..." : audit.length >= 1000 ? "Display limit reached" : "Load older events"}</button>
+        <ServiceLogsPanel key={logRevision} base="/api/audit" beforeParam="before" download="/api/logs/download" />
       </div>
     );
 
@@ -1298,15 +1228,6 @@ export function SettingsPage({
         </Modal>
       )}
 
-      {neptuneDialogOpen && (
-        <Modal title="Initialize Neptune" onClose={() => !neptunePending && setNeptuneDialogOpen(false)}>
-          <form className="form-stack" onSubmit={initializeNeptune}>
-            <p className="hint">Create a one-time Linux pipeline code in Saturn → Synchronization. The code goes directly to the local Updater and is never stored by Kernel.</p>
-            <label><span>Saturn setup code</span><input value={neptuneCode} minLength={32} maxLength={32} autoComplete="off" required onChange={(event) => setNeptuneCode(event.target.value.trim())} /></label>
-            <div className="dialog-actions"><button type="button" disabled={neptunePending} onClick={() => setNeptuneDialogOpen(false)}>Cancel</button><button type="submit" disabled={neptunePending}>{neptunePending ? "Starting..." : "Initialize"}</button></div>
-          </form>
-        </Modal>
-      )}
 
     </section>
   );

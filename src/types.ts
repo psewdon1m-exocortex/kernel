@@ -81,9 +81,9 @@ export interface NeptuneStatus {
 }
 
 export interface NeptuneAvailability {
-  installed: boolean;
-  linked: boolean;
-  state: "linked" | "unlinked" | "unavailable";
+  installed: boolean | null;
+  linked: boolean | null;
+  state: "linked" | "unlinked" | "unavailable" | "authorization_failed";
   version?: string | null;
 }
 

@@ -188,8 +188,8 @@ describe("Kernel API", () => {
     assert.equal(status.status, 200);
     assert.equal(status.body.client_instance_id, "client-test");
     const scheduled = await agent.put("/api/neptune/schedule").send({ enabled: true, interval_hours: 6 });
-    assert.equal(scheduled.status, 204);
-    assert.deepEqual(neptuneSchedule, { enabled: true, intervalHours: 6 });
+    assert.equal(scheduled.status, 426);
+    assert.equal(neptuneSchedule, undefined);
 
     const unauthorizedExport = await request(app).post("/api/internal/neptune/backup");
     assert.equal(unauthorizedExport.status, 401);
