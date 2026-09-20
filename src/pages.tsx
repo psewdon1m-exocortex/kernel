@@ -1085,9 +1085,11 @@ export function SettingsPage({
         <div className="settings-group backup-neptune-group">
           <h3>Automatic backup to Saturn</h3>
           <p>Set the archive schedule and request backups here. Neptune transfers the archive to remote storage.</p>
-          <div className="reachability-row"><span>Local Neptune agent:</span><strong className={!neptune || neptune.configured === false ? "is-checking" : neptune.state === "linked" ? "is-reachable" : "is-unreachable"}>{!neptune ? "Checking…" : neptune.configured === false ? "Not configured" : neptune.state === "linked" ? "Service Reachability" : neptune.state === "unlinked" ? "Detected · not linked" : neptune.state === "authorization_failed" ? "Authorization failed" : neptune.linked ? "Offline · previously linked" : "Unavailable · installation unknown"}<i aria-hidden="true" /></strong></div>
+          <div className="reachability-row"><span>Local Neptune agent:</span><strong className={!neptune || neptune.configured === false ? "is-checking" : neptune.state === "linked" ? "is-reachable" : "is-unreachable"}>{!neptune ? "Checking…" : neptune.configured === false ? "Not configured" : neptune.state === "linked" ? "Service Reachability" : neptune.state === "upgrade_required" ? "Upgrade required · policy protocol unavailable" : neptune.state === "unlinked" ? "Detected · not linked" : neptune.state === "authorization_failed" ? "Authorization failed" : neptune.linked ? "Offline · previously linked" : "Unavailable · installation unknown"}<i aria-hidden="true" /></strong></div>
           {neptune && (neptune.state === "unlinked" || neptune.installed === false) ? <div className="backup-neptune-actions"><button type="button" className="section-action" onClick={initializeNeptune}>Initialize</button></div> : null}
-          <BackupPolicyPanel service="kernel" base="/api/neptune/policy" />
+          {!neptune ? null : neptune.state === "upgrade_required" || neptune.policy_supported === false
+            ? <p>Update Saturn and Neptune to enable service-owned backup policy controls.</p>
+            : <BackupPolicyPanel service="kernel" base="/api/neptune/policy" />}
         </div>
         <div className="settings-group"><h3>Neptune version</h3><p>Current installed version: {neptune?.version ?? "Unavailable"}</p><button type="button" className="section-action" onClick={() => openKernelUpdates("neptune")}>Check Neptune for updates</button></div>
       </div>

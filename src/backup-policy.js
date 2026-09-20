@@ -9,7 +9,7 @@ function node(tag, text, className) {
 
 export function mountBackupPolicy(root, options) {
   root.classList.add("exo-backup-policy");
-  let closed = false, policy, jobs = [], busy = false, loading = false, timer, failure = "", failureCode = "", pending;
+  let closed = false, policy, jobs = [], busy = false, loading = false, timer, failure = "", failureCode = "", failureStatus = 0, pending;
   const drafts = new Map(), controllers = new Set();
   const key = "exocortex.backup-policy.v1." + options.service;
   try { pending = JSON.parse(localStorage.getItem(key) || "null"); } catch { /* Only an operation hint. */ }
@@ -103,7 +103,8 @@ export function mountBackupPolicy(root, options) {
   function render() {
     if (closed) return;
     const unconfigured = !policy && failureCode === "NEPTUNE_NOT_CONFIGURED";
-    error.textContent = unconfigured ? "" : failure; retry.hidden = unconfigured || !failure; retry.disabled = busy;
+    const upgradeRequired = !policy && failureStatus === 426;
+    error.textContent = unconfigured ? "" : failure; retry.hidden = unconfigured || upgradeRequired || !failure; retry.disabled = busy;
     resume.hidden = !policy?.paused; resume.disabled = busy;
     summary.hidden = !policy && !loading && !unconfigured;
     if (!policy) { summary.className = "exo-policy-summary exo-agent-muted"; summary.textContent = unconfigured ? "Initialize Neptune to enable automatic backups." : loading ? "Loading backup policy…" : ""; return; }
@@ -137,7 +138,7 @@ export function mountBackupPolicy(root, options) {
   }
   async function mutate(body, draftKind, suffix = "", method = "PUT") {
     if (busy || closed) return;
-    busy = true; failure = failureCode = ""; remember({ body, suffix, method, draftKind });
+    busy = true; failure = failureCode = ""; failureStatus = 0; remember({ body, suffix, method, draftKind });
     // Disable existing controls without losing focus/draft to a re-render.
     root.querySelectorAll("button,input").forEach(control => { control.disabled = true; });
     try {
@@ -149,7 +150,7 @@ export function mountBackupPolicy(root, options) {
       await load();
     } catch (error) {
       if (closed) return;
-      failure = error.message; failureCode = error.code || "";
+      failure = error.message; failureCode = error.code || ""; failureStatus = error.status || 0;
       if (error.status && error.status < 500) remember(null);
       if (draftKind && drafts.has(draftKind)) {
         drafts.get(draftKind).error = error.status === 409 ? "Policy changed. Your proposed interval is preserved; review before retrying." : error.message;
@@ -166,11 +167,11 @@ export function mountBackupPolicy(root, options) {
     jobs = Array.isArray(history) ? history : history.jobs ?? history.runs ?? [];
   }
   async function refresh() {
-    if (loading || busy || closed) return;
+    if (loading || busy || closed || failureStatus === 426) return;
     if (pending) { await mutate(pending.body, pending.draftKind, pending.suffix, pending.method); return; }
     loading = true;
-    try { await load(); failure = failureCode = ""; }
-    catch (error) { if (!closed) { failure = error.message; failureCode = error.code || ""; } }
+    try { await load(); failure = failureCode = ""; failureStatus = 0; }
+    catch (error) { if (!closed) { failure = error.message; failureCode = error.code || ""; failureStatus = error.status || 0; } }
     finally { loading = false; render(); }
   }
   void (async () => {

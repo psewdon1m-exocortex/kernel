@@ -44,7 +44,9 @@ function request(socketPath, projectId, controlToken, method, route, body, timeo
   });
 }
 
-export function createNeptuneClient(socketPath, projectId, controlTokenFile) {
+const REQUIRED_POLICY_PROTOCOL = 1;
+
+export function createNeptuneClient(socketPath, projectId, controlTokenFile, transport = request) {
   const token = () => {
     if (!controlTokenFile) throw Object.assign(new Error("Neptune control token is not configured"), { status: 503, code: "NEPTUNE_NOT_CONFIGURED" });
     return fs.readFileSync(controlTokenFile, "utf8").trim();
@@ -55,10 +57,14 @@ export function createNeptuneClient(socketPath, projectId, controlTokenFile) {
       // Missing enrollment configuration says nothing about host installation.
       if (!controlTokenFile) return { installed: null, linked: false, configured: false, state: "unlinked", version: null };
       try {
-        const health = await request(socketPath, "", "", "GET", "/v1/health", null, 3_000);
+        const health = await transport(socketPath, "", "", "GET", "/v1/health", null, 3_000);
         try {
-          lastKnown = { installed: true, linked: true, state: "linked", ...(await this.status()),
-            policy_protocol: health.policy_protocol ?? 0, last_verified_at: new Date().toISOString() };
+          const policyProtocol = Number.isSafeInteger(health.policy_protocol) ? health.policy_protocol : 0;
+          const policySupported = policyProtocol >= REQUIRED_POLICY_PROTOCOL;
+          lastKnown = { installed: true, linked: true, ...(await this.status()),
+            state: policySupported ? "linked" : "upgrade_required", policy_protocol: policyProtocol,
+            policy_supported: policySupported, required_policy_protocol: REQUIRED_POLICY_PROTOCOL,
+            last_verified_at: new Date().toISOString() };
           return lastKnown;
         } catch (error) {
           return { ...lastKnown, installed: true, linked: error.upstreamStatus === 404 ? false : lastKnown?.linked ?? null,
@@ -70,13 +76,21 @@ export function createNeptuneClient(socketPath, projectId, controlTokenFile) {
           state: "unavailable", version: lastKnown?.version ?? null, error: "Neptune is unreachable; installation state is not confirmed" };
       }
     },
-    policy: (method = "GET", body, suffix = "") => {
+    policy: async (method = "GET", body, suffix = "") => {
       if (!["", "/runs"].includes(suffix) || !["GET", "PUT", "POST"].includes(method))
         throw Object.assign(new Error("Invalid backup policy operation"), { status: 400 });
-      return request(socketPath, projectId, token(), method, "/policy" + suffix, body);
+      try {
+        return await transport(socketPath, projectId, token(), method, "/policy" + suffix, body);
+      } catch (error) {
+        if (error?.upstreamStatus === 404) {
+          throw Object.assign(new Error("Backup policy protocol is unavailable. Update Saturn and Neptune, then retry."),
+            { status: 426, code: "NEPTUNE_POLICY_UPGRADE_REQUIRED", upstreamStatus: 404 });
+        }
+        throw error;
+      }
     },
-    status: () => request(socketPath, projectId, token(), "GET", "/status"),
-    schedule: (enabled, intervalHours) => request(socketPath, projectId, token(), "PUT", "/schedule", { enabled, intervalHours }),
-    run: () => request(socketPath, projectId, token(), "POST", "/runs"),
+    status: () => transport(socketPath, projectId, token(), "GET", "/status"),
+    schedule: (enabled, intervalHours) => transport(socketPath, projectId, token(), "PUT", "/schedule", { enabled, intervalHours }),
+    run: () => transport(socketPath, projectId, token(), "POST", "/runs"),
   };
 }

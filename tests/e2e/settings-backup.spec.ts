@@ -34,7 +34,7 @@ test("a linked single pipeline has compact controls; an outage exposes a bounded
   let offline = false;
   await page.route("**/api/neptune/**", async route => {
     const path = new URL(route.request().url()).pathname;
-    if (path.endsWith("/availability")) return route.fulfill({ json: { installed: true, linked: true, state: offline ? "unavailable" : "linked", version: "0.1.8" } });
+    if (path.endsWith("/availability")) return route.fulfill({ json: { installed: true, linked: true, state: offline ? "unavailable" : "linked", version: "0.1.8", policy_protocol: 1, policy_supported: true } });
     if (path.endsWith("/policy/runs")) return route.fulfill({ json: { jobs: [] } });
     if (path.endsWith("/policy")) return offline
       ? route.fulfill({ status: 503, json: { code: "NEPTUNE_UNAVAILABLE", error: "Neptune is unavailable. Check the connection and retry." } })
@@ -60,4 +60,43 @@ test("a linked single pipeline has compact controls; an outage exposes a bounded
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
     expect(await card.evaluate(root => root.scrollWidth - root.clientWidth)).toBeLessThanOrEqual(1);
   }
+});
+
+test("an outdated local agent is identified before policy requests are sent", async ({ page }) => {
+  let policyRequests = 0;
+  await page.route("**/api/neptune/**", async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/availability")) return route.fulfill({ json: { installed: true, linked: true,
+      state: "upgrade_required", version: "0.1.8", policy_protocol: 0, policy_supported: false, required_policy_protocol: 1 } });
+    if (path.includes("/policy")) policyRequests++;
+    await route.continue();
+  });
+  await openSettings(page);
+  const card = page.locator("[data-settings-section='backup']");
+  await expect(card.locator(".reachability-row")).toContainText("Upgrade required · policy protocol unavailable");
+  await expect(card.getByText("Update Saturn and Neptune to enable service-owned backup policy controls.", { exact: true })).toBeVisible();
+  await expect(card.getByRole("button", { name: "Retry policy status", exact: true })).toHaveCount(0);
+  await expect(card.getByRole("button", { name: "Back up to Saturn now", exact: true })).toHaveCount(0);
+  expect(policyRequests).toBe(0);
+});
+
+test("an outdated Saturn backend is terminal until the operator updates and reloads", async ({ page }) => {
+  let policyRequests = 0;
+  await page.route("**/api/neptune/**", async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/availability")) return route.fulfill({ json: { installed: true, linked: true,
+      state: "linked", version: "0.1.9", policy_protocol: 1, policy_supported: true, required_policy_protocol: 1 } });
+    if (path.endsWith("/policy")) {
+      policyRequests++;
+      return route.fulfill({ status: 426, json: { code: "NEPTUNE_POLICY_UPGRADE_REQUIRED",
+        error: "Saturn does not provide the service-owned backup policy protocol. Update Saturn before Neptune, then retry." } });
+    }
+    await route.continue();
+  });
+  await openSettings(page);
+  const card = page.locator("[data-settings-section='backup']");
+  await expect(card.getByText("Saturn does not provide the service-owned backup policy protocol. Update Saturn before Neptune, then retry.", { exact: true })).toBeVisible();
+  await expect(card.getByRole("button", { name: "Retry policy status", exact: true })).toHaveCount(0);
+  await page.waitForTimeout(5_500);
+  expect(policyRequests).toBe(1);
 });
