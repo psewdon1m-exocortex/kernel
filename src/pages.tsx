@@ -1085,8 +1085,8 @@ export function SettingsPage({
         <div className="settings-group backup-neptune-group">
           <h3>Automatic backup to Saturn</h3>
           <p>Set the archive schedule and request backups here. Neptune transfers the archive to remote storage.</p>
-          <div className="reachability-row"><span>Local Neptune agent:</span><strong className={neptune?.state === "linked" ? "is-reachable" : "is-unreachable"}>{!neptune ? "Checking" : neptune.state === "linked" ? "Linked" : neptune.state === "unlinked" ? "Not linked" : neptune.state === "authorization_failed" ? "Authorization failed" : neptune.linked ? "Unavailable · last known linked" : "Unavailable · installation unknown"}<i aria-hidden="true" /></strong></div>
-          <button type="button" className="section-action" onClick={initializeNeptune}>Initialize</button>
+          <div className="reachability-row"><span>Local Neptune agent:</span><strong className={!neptune || neptune.configured === false ? "is-checking" : neptune.state === "linked" ? "is-reachable" : "is-unreachable"}>{!neptune ? "Checking…" : neptune.configured === false ? "Not configured" : neptune.state === "linked" ? "Service Reachability" : neptune.state === "unlinked" ? "Detected · not linked" : neptune.state === "authorization_failed" ? "Authorization failed" : neptune.linked ? "Offline · previously linked" : "Unavailable · installation unknown"}<i aria-hidden="true" /></strong></div>
+          {neptune && (neptune.state === "unlinked" || neptune.installed === false) ? <div className="backup-neptune-actions"><button type="button" className="section-action" onClick={initializeNeptune}>Initialize</button></div> : null}
           <BackupPolicyPanel service="kernel" base="/api/neptune/policy" />
         </div>
         <div className="settings-group"><h3>Neptune version</h3><p>Current installed version: {neptune?.version ?? "Unavailable"}</p><button type="button" className="section-action" onClick={() => openKernelUpdates("neptune")}>Check Neptune for updates</button></div>
@@ -1099,18 +1099,18 @@ export function SettingsPage({
           <h3>Update pipeline</h3>
           <p>Release discovery comes from Kernel Register; replacement and rollback are performed by the local Updater.</p>
           <p>Current installed version: <strong className="accent-text">{updaterStatus?.kernel_version ?? "Loading..."}</strong></p>
-        </div>
-        <div className="update-statuses">
-          <div className="reachability-row">
-            <span>Local updater agent:</span>
-            <strong className={updaterStatus?.available ? "is-reachable" : updaterStatus ? "is-unreachable" : "is-checking"}>{updaterStatus?.available ? "Service Reachability" : updaterStatus ? "Service Unavailable" : "Checking"}<i aria-hidden="true" /></strong>
+          <div className="update-statuses">
+            <div className="reachability-row">
+              <span>Local updater agent:</span>
+              <strong className={updaterStatus?.available ? "is-reachable" : updaterStatus ? "is-unreachable" : "is-checking"}>{updaterStatus?.available ? "Service Reachability" : updaterStatus ? "Service Unavailable" : "Checking"}<i aria-hidden="true" /></strong>
+            </div>
+            <div className="reachability-row">
+              <span>Kernel Register:</span>
+              <strong className={`is-${registerReachability}`}>{registerReachability === "reachable" ? "Service Reachability" : registerReachability === "unreachable" ? "Service Unavailable" : "Checking"}<i aria-hidden="true" /></strong>
+            </div>
           </div>
-          <div className="reachability-row">
-            <span>Kernel Register:</span>
-            <strong className={`is-${registerReachability}`}>{registerReachability === "reachable" ? "Service Reachability" : registerReachability === "unreachable" ? "Service Unavailable" : "Checking"}<i aria-hidden="true" /></strong>
-          </div>
+          <button type="button" className="section-action update-check-action" onClick={() => openKernelUpdates()}>Check for updates</button>
         </div>
-        <button type="button" className="section-action update-check-action" onClick={() => openKernelUpdates()}>Check for updates</button>
         <div className="settings-group updater-version-group">
           <h3>Updater version</h3>
           <p>Current installed version: {updaterStatus?.version ?? "unavailable"}</p>

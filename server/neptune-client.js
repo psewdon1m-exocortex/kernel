@@ -38,7 +38,7 @@ function request(socketPath, projectId, controlToken, method, route, body, timeo
     call.on("timeout", () => call.destroy(new Error("Neptune request timed out")));
     call.on("error", (error) => reject(Object.assign(new Error(
       ["ENOENT", "ECONNREFUSED", "EACCES"].includes(error?.code) ? "Neptune is not installed or is unavailable on this VPS" : error.message,
-    ), { status: ["ENOENT", "ECONNREFUSED", "EACCES"].includes(error?.code) ? 503 : 502 })));
+    ), { status: ["ENOENT", "ECONNREFUSED", "EACCES"].includes(error?.code) ? 503 : 502, code: "NEPTUNE_UNAVAILABLE" })));
     if (payload) call.write(payload);
     call.end();
   });
@@ -46,12 +46,14 @@ function request(socketPath, projectId, controlToken, method, route, body, timeo
 
 export function createNeptuneClient(socketPath, projectId, controlTokenFile) {
   const token = () => {
-    if (!controlTokenFile) throw Object.assign(new Error("Neptune control token is not configured"), { status: 503 });
+    if (!controlTokenFile) throw Object.assign(new Error("Neptune control token is not configured"), { status: 503, code: "NEPTUNE_NOT_CONFIGURED" });
     return fs.readFileSync(controlTokenFile, "utf8").trim();
   };
   let lastKnown = null;
   return {
     async availability() {
+      // Missing enrollment configuration says nothing about host installation.
+      if (!controlTokenFile) return { installed: null, linked: false, configured: false, state: "unlinked", version: null };
       try {
         const health = await request(socketPath, "", "", "GET", "/v1/health", null, 3_000);
         try {

@@ -147,8 +147,8 @@ test("operator can navigate every Kernel section", async ({ page }) => {
   await expect(backupSection.getByRole("button", { name: "Browse local snapshot archive" })).toBeVisible();
   await expect(backupSection.getByText("Local Neptune agent:", { exact: true })).toBeVisible();
   await expect(backupSection.getByRole("heading", { name: "Automatic backup to Saturn" })).toBeVisible();
-  await expect(backupSection.getByText(/Backup policy is unavailable/)).toBeVisible();
-  await expect(backupSection.getByRole("button", { name: "Retry policy status" })).toBeVisible();
+  await expect(backupSection.getByText("Initialize Neptune to enable automatic backups.", { exact: true })).toBeVisible();
+  await expect(backupSection.getByRole("button", { name: "Retry policy status" })).toBeHidden();
   await expect(backupSection.getByRole("button", { name: "Check Neptune for updates" })).toBeVisible();
   const updatesSection = page.locator("[data-settings-section='updates']");
   const updatesGeometry = await updatesSection.boundingBox();
@@ -174,7 +174,7 @@ test("operator can navigate every Kernel section", async ({ page }) => {
 
   await navigate(page, "Documentation");
   await expect(page.locator(".page-title h1")).toHaveText("documentation");
-  await expect(page.getByText("Kernel 0.3.0 / Operator Guide", { exact: true })).toBeVisible();
+  await expect(page.getByText("Kernel 0.3.1 / Operator Guide", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Welcome To Kernel" })).toBeVisible();
   const documentationSearch = page.getByLabel("Search documentation");
   await documentationSearch.fill("last-known-good");

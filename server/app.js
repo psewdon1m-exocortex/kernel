@@ -1731,13 +1731,19 @@ export function createKernelApp(options) {
   });
 
   app.use((error, req, res, _next) => {
+    if (req.path.startsWith("/api/neptune/") && error?.code === "NEPTUNE_NOT_CONFIGURED") {
+      return res.status(503).json({ code: "NEPTUNE_NOT_CONFIGURED", error: "Initialize Neptune to enable automatic backups." });
+    }
     const isUploadLimit = error?.code === "LIMIT_FILE_SIZE";
     const isDuplicate = typeof error?.message === "string" && error.message.includes("UNIQUE constraint failed");
+    const neptuneUnavailable = req.path.startsWith("/api/neptune/") && error?.code === "NEPTUNE_UNAVAILABLE";
     const status = isUploadLimit ? 413 : isDuplicate ? 409 : Number(error?.status) || 500;
     const message = isUploadLimit
       ? "Uploaded file exceeds the configured size limit"
       : isDuplicate
         ? "A Register entry with this key already exists"
+        : neptuneUnavailable
+          ? "Neptune is unavailable. Check the connection and retry."
         : status >= 500
           ? "Internal server error"
           : error.message;
@@ -1758,7 +1764,7 @@ export function createKernelApp(options) {
         message,
       );
     }
-    res.status(status).json({ error: message });
+    res.status(status).json({ error: message, ...(neptuneUnavailable ? { code: "NEPTUNE_UNAVAILABLE" } : {}) });
   });
 
   app.locals.kernel = {
