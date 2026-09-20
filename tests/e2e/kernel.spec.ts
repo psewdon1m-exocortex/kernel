@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { expect, test } from "@playwright/test";
 
 async function navigate(page: import("@playwright/test").Page, name: string) {
@@ -48,6 +49,7 @@ test("operator can navigate every Kernel section", async ({ page }) => {
   expect(headerGeometry).toMatchObject({ x: 250, y: 0, height: 123 });
   expect(titleGeometry?.x).toBeCloseTo(280, 0);
   await expect(page.locator(".page-title h1")).toHaveCSS("font-size", "80px");
+  await expect(page.locator(".page-title h1")).toHaveCSS("line-height", "84px");
   const originalOrder = await page.locator("[data-dashboard-node]").evaluateAll(
     (nodes) => nodes.map((node) => node.getAttribute("data-dashboard-node")),
   );
@@ -123,7 +125,7 @@ test("operator can navigate every Kernel section", async ({ page }) => {
 
   await navigate(page, "Settings");
   await expect(page.locator(".page-title h1")).toHaveText("settings");
-  for (const name of ["Appearance", "Security", "Backup", "Updates", "Logs", "Documents"]) {
+  for (const name of ["Appearance", "Security", "Backups", "Updates", "Logs", "Documents"]) {
     await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
   }
   await expect(page.getByRole("heading", { name: "Connection with Kernel", exact: true })).toHaveCount(0);
@@ -164,17 +166,45 @@ test("operator can navigate every Kernel section", async ({ page }) => {
     component: "kernel", installed_version: "0.2.14", available_version: "0.2.15", update_available: true, updater_version: "0.5.0",
   } }));
   await page.route("**/api/update-flow/jobs", route => route.fulfill({ json: { jobs: [] } }));
+  const stagedBackup = Buffer.from("verified pre-update archive");
+  const receiptPayload = {
+    id: "browser-update-backup",
+    filename: "kernel-before-0.2.15.zip",
+    size: stagedBackup.byteLength,
+    sha256: createHash("sha256").update(stagedBackup).digest("hex"),
+  };
+  const receipt = `${Buffer.from(JSON.stringify(receiptPayload)).toString("base64url")}.test-signature`;
+  let installRequested = false;
+  await page.route("**/api/update-flow/backup", route => route.fulfill({
+    status: 200,
+    contentType: "application/zip",
+    headers: { "X-Update-Receipt": receipt },
+    body: stagedBackup,
+  }));
+  await page.route("**/api/update-flow/install/kernel", route => {
+    installRequested = true;
+    return route.fulfill({ json: { id: "browser-update-job", request_id: receiptPayload.id, service: "kernel", state: "COMPLETED", rollback_available: false } });
+  });
+  await page.route("**/api/update-flow/jobs/browser-update-job", route => route.fulfill({ json: {
+    id: "browser-update-job", request_id: receiptPayload.id, service: "kernel", state: "COMPLETED", rollback_available: false,
+  } }));
+  await page.evaluate(() => Object.defineProperty(window, "showSaveFilePicker", { configurable: true, value: undefined }));
   await updatesSection.getByRole("button", { name: "Check for updates", exact: true }).click();
   await expect(page.getByRole("dialog", { name: "Updates", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Install 0.2.15", exact: true }).click();
   await expect(page.getByRole("dialog", { name: "Install KERNEL update" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Create backup and install" })).toBeVisible();
-  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Create backup and install" }).click();
+  await download;
+  await expect(page.getByRole("dialog", { name: "Install KERNEL update" })).toBeHidden();
+  await expect(page.getByText("I have saved the ZIP on my computer.", { exact: true })).toHaveCount(0);
+  await expect.poll(() => installRequested).toBe(true);
   await page.getByRole("button", { name: "Close updates" }).click();
 
   await navigate(page, "Documentation");
   await expect(page.locator(".page-title h1")).toHaveText("documentation");
-  await expect(page.getByText("Kernel 0.3.1 / Operator Guide", { exact: true })).toBeVisible();
+  await expect(page.getByText("Kernel 0.3.2 / Operator Guide", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Welcome To Kernel" })).toBeVisible();
   const documentationSearch = page.getByLabel("Search documentation");
   await documentationSearch.fill("last-known-good");
@@ -305,6 +335,7 @@ test("Topology embeds Excalidraw across the requested viewport and persists draw
     getComputedStyle(element).getPropertyValue("--color-primary").trim()
   ))).toBe("#00a8ff");
   await expect(editor.getByRole("radio", { name: /Rectangle/ })).toBeVisible();
+  await expect(editor.getByRole("radio", { name: /Arrow/ })).toBeVisible();
   await expect(editor.getByRole("radio", { name: /Draw/ })).toBeVisible();
   await expect(editor.getByRole("radio", { name: /Text/ })).toBeVisible();
   const gridToggle = page.getByRole("button", { name: "Hide canvas grid" });
@@ -371,14 +402,60 @@ test("Topology embeds Excalidraw across the requested viewport and persists draw
   expect(saved.elements.length).toBe(before + 1);
   expect(saved.elements.at(-1).type).toBe("rectangle");
 
+  const firstShape = saved.elements.at(-1);
+  await page.keyboard.press("r");
+  await page.mouse.move(canvasBox.x + 700, canvasBox.y + 260);
+  await page.mouse.down();
+  await page.mouse.move(canvasBox.x + 900, canvasBox.y + 400, { steps: 8 });
+  await page.mouse.up();
+  await page.keyboard.press("a");
+  await page.mouse.move(canvasBox.x + 550, canvasBox.y + 330);
+  await page.mouse.down();
+  await page.mouse.move(canvasBox.x + 710, canvasBox.y + 330, { steps: 12 });
+  await page.mouse.up();
+  await expect(page.locator(".topology-host-status")).toHaveText("Saved", { timeout: 10_000 });
+  const boundScene = await page.evaluate(async () => {
+    const response = await fetch("/api/topology");
+    return (await response.json()).project;
+  });
+  const secondShape = boundScene.elements.at(-2);
+  const arrow = boundScene.elements.at(-1);
+  expect(secondShape.type).toBe("rectangle");
+  expect(arrow.type).toBe("arrow");
+  expect(arrow.startBinding?.elementId).toBe(firstShape.id);
+  expect(arrow.endBinding?.elementId).toBe(secondShape.id);
+
+  await page.keyboard.press("v");
+  await page.mouse.dblclick(canvasBox.x + 460, canvasBox.y + 330);
+  await page.keyboard.type("Bound label");
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".topology-host-status")).toHaveText("Saved", { timeout: 10_000 });
+  const textScene = await page.evaluate(async () => {
+    const response = await fetch("/api/topology");
+    return (await response.json()).project;
+  });
+  const boundText = textScene.elements.find((element: { text?: string }) => element.text === "Bound label");
+  expect(boundText?.containerId).toBe(firstShape.id);
+
+  await editor.getByRole("button", { name: "Zoom in" }).click();
+  await editor.getByRole("button", { name: "Zoom in" }).click();
+  const storedViewport = await page.evaluate(() => {
+    const value = window.localStorage.getItem("kernel.topology.viewport.v1");
+    return value ? JSON.parse(value) : null;
+  });
+  expect(storedViewport?.zoom?.value).toBeGreaterThan(1);
+  await expect(editor.getByRole("button", { name: "Reset zoom" })).not.toHaveText("100%");
+
   await page.reload();
-  await expect(page.getByLabel("Topology Map editor").locator(".excalidraw")).toBeVisible();
+  const restoredEditor = page.getByLabel("Topology Map editor").locator(".excalidraw");
+  await expect(restoredEditor).toBeVisible();
+  await expect(restoredEditor.getByRole("button", { name: "Reset zoom" })).not.toHaveText("100%");
   await expect(page.getByRole("button", { name: "Show canvas grid" })).toHaveAttribute("aria-pressed", "false");
   const restoredCount = await page.evaluate(async () => {
     const response = await fetch("/api/topology");
     return (await response.json()).project.elements.length as number;
   });
-  expect(restoredCount).toBe(saved.elements.length);
+  expect(restoredCount).toBe(textScene.elements.length);
   await page.getByRole("button", { name: "Versions", exact: true }).click();
   await expect(page.getByRole("dialog", { name: "Topology versions" })).toContainText("ACTIVE");
 });

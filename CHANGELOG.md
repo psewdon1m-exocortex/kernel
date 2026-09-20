@@ -4,6 +4,17 @@ This document specializes [Part 00 — system unification specification](https:/
 
 ## Unreleased
 
+## 0.3.2
+
+- Remove the redundant second acknowledgement after the required pre-update
+  backup download; a verified archive now proceeds directly to installation.
+- Preserve the local Excalidraw camera across Topology Map reloads and restore
+  native arrow-to-shape and bound-text behavior.
+- Prevent large page titles from clipping and rename the Settings backup card
+  to Backups.
+
+## 0.3.1
+
 - Treat the deployment profile as a required Register baseline: additional
   operator-defined records no longer fail readiness or get pruned on apply.
 

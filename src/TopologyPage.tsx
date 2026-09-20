@@ -6,6 +6,7 @@ import type {
   AppState,
   BinaryFiles,
   ExcalidrawImperativeAPI,
+  Zoom,
 } from "@excalidraw/excalidraw/types";
 import "@excalidraw/excalidraw/index.css";
 import { api } from "./api";
@@ -13,6 +14,14 @@ import { ConfirmDialog, Modal, formatDate, shortHash } from "./components";
 import type { RevisionSummary } from "./types";
 
 type Notify = (message: string, kind?: "success" | "error" | "info") => void;
+
+const TOPOLOGY_VIEWPORT_STORAGE_KEY = "kernel.topology.viewport.v1";
+
+interface TopologyViewport {
+  scrollX: number;
+  scrollY: number;
+  zoom: Zoom;
+}
 
 interface ExcalidrawDocument {
   type: "excalidraw";
@@ -81,13 +90,53 @@ function normalizeScene(value: unknown): { document: ExcalidrawDocument; migrate
   };
 }
 
+function readStoredViewport(): TopologyViewport | undefined {
+  try {
+    const stored = window.localStorage.getItem(TOPOLOGY_VIEWPORT_STORAGE_KEY);
+    if (!stored) return undefined;
+    const candidate = JSON.parse(stored) as Partial<TopologyViewport>;
+    const zoom = candidate.zoom?.value;
+    if (
+      !Number.isFinite(candidate.scrollX)
+      || !Number.isFinite(candidate.scrollY)
+      || !Number.isFinite(zoom)
+      || !zoom
+      || zoom <= 0
+    ) return undefined;
+    return {
+      scrollX: candidate.scrollX as number,
+      scrollY: candidate.scrollY as number,
+      zoom: { value: zoom } as Zoom,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function storeViewport(scrollX: number, scrollY: number, zoom: Zoom) {
+  try {
+    window.localStorage.setItem(
+      TOPOLOGY_VIEWPORT_STORAGE_KEY,
+      JSON.stringify({ scrollX, scrollY, zoom }),
+    );
+  } catch {
+    // A blocked localStorage must not make the topology editor unusable.
+  }
+}
+
 function sceneForEditor(document: ExcalidrawDocument): ImportedDataState {
   return {
     type: document.type,
     version: document.version,
     source: document.source,
     elements: document.elements,
-    appState: document.appState,
+    appState: {
+      ...document.appState,
+      ...readStoredViewport(),
+      // These are native Excalidraw bindings. Keeping the transient flag on
+      // restores arrow-to-shape and bound-text behavior without custom logic.
+      isBindingEnabled: true,
+    },
     files: document.files,
     scrollToContent: false,
   };
@@ -231,6 +280,10 @@ export function TopologyPage({ notify, focusMode, onFocusModeChange }: {
     saveTimerRef.current = window.setTimeout(() => void save(false), 1000);
   }, [save]);
 
+  const handleScrollChange = useCallback((scrollX: number, scrollY: number, zoom: Zoom) => {
+    storeViewport(scrollX, scrollY, zoom);
+  }, []);
+
   const toggleGrid = useCallback(() => {
     const editor = editorRef.current;
     if (!editor) return;
@@ -297,8 +350,10 @@ export function TopologyPage({ notify, focusMode, onFocusModeChange }: {
             initialData={scene.data}
             excalidrawAPI={(editor) => {
               editorRef.current = editor;
+              editor.updateScene({ appState: { isBindingEnabled: true } });
             }}
             onChange={handleChange}
+            onScrollChange={handleScrollChange}
             name="Exocortex Topology"
             langCode="en"
             theme="dark"

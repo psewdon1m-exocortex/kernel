@@ -1021,7 +1021,7 @@ export function SettingsPage({
   const sectionTitles: Record<SettingsSection, string> = {
     appearance: "Appearance",
     security: "Security",
-    backup: "Backup",
+    backup: "Backups",
     updates: "Updates",
     logs: "Logs",
     documents: "Documents",
