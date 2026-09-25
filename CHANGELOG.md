@@ -4,6 +4,13 @@ This document specializes [Part 00 — system unification specification](https:/
 
 ## Unreleased
 
+## 0.3.3
+
+- Show an upgrade requirement when a local Neptune agent lacks the service-owned
+  backup policy protocol, instead of sending a request that returns HTTP 404.
+- Map an old Saturn policy endpoint to an actionable upgrade response and keep
+  the policy editor behind the advertised protocol capability.
+
 ## 0.3.2
 
 - Remove the redundant second acknowledgement after the required pre-update

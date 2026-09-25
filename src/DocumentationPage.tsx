@@ -181,7 +181,7 @@ docker compose ps`}</pre>
       <>
         <p>Create Backup produces a downloadable ZIP containing <code>manifest.json</code> and the persistent Kernel state as a checksummed data member. Store the archive as sensitive operational material.</p>
         <p>Browse local snapshot archive opens the native file picker directly. Kernel then stages and inspects the selected file, reporting its name, size, format, and creation time without mutating live state. Only explicit confirmation imports it. Archive bounds, allow-listed members, and SHA-256 are checked again during restore. Legacy Kernel JSON backups remain importable for migration.</p>
-        <p>Automatic schedules, explicit remote runs, agent health, and Neptune updates are managed centrally in Saturn → Synchronization. If a local Neptune agent is detected but not linked, Kernel Settings accepts a one-time Saturn setup code and hands initialization to the local Updater.</p>
+        <p>After enrollment, manage automatic schedules and explicit backup runs in Kernel Settings → Backup. Saturn Synchronization provides enrollment and fleet status. The policy editor requires a Neptune agent that advertises policy protocol 1 and a compatible Saturn service. If a local agent is detected but not linked, Kernel Settings accepts a one-time Saturn setup code and hands initialization to the local Updater.</p>
       </>
     ),
   },
@@ -336,7 +336,7 @@ export function DocumentationPage() {
         onScroll={updateActiveSection}
       >
         <header>
-          <span className="documentation-kicker">Kernel 0.3.2 / Operator Guide</span>
+          <span className="documentation-kicker">Kernel 0.3.3 / Operator Guide</span>
           <h2>Welcome To Kernel</h2>
           <p>A practical guide to installing, configuring, operating, backing up, and diagnosing the passive Exocortex registry.</p>
         </header>

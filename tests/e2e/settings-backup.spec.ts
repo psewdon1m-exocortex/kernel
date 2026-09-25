@@ -34,7 +34,7 @@ test("a linked single pipeline has compact controls; an outage exposes a bounded
   let offline = false;
   await page.route("**/api/neptune/**", async route => {
     const path = new URL(route.request().url()).pathname;
-    if (path.endsWith("/availability")) return route.fulfill({ json: { installed: true, linked: true, state: offline ? "unavailable" : "linked", version: "0.1.8", policy_protocol: 1, policy_supported: true } });
+    if (path.endsWith("/availability")) return route.fulfill({ json: { installed: true, linked: true, state: offline ? "unavailable" : "linked", version: "0.1.9", policy_protocol: 1, policy_supported: true } });
     if (path.endsWith("/policy/runs")) return route.fulfill({ json: { jobs: [] } });
     if (path.endsWith("/policy")) return offline
       ? route.fulfill({ status: 503, json: { code: "NEPTUNE_UNAVAILABLE", error: "Neptune is unavailable. Check the connection and retry." } })
