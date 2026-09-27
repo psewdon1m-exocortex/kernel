@@ -759,6 +759,7 @@ export function SettingsPage({
   const [voltDialogOpen, setVoltDialogOpen] = useState(false);
   const [voltConnection, setVoltConnection] = useState<VoltConnectionSettings>({ url: "", token_configured: false });
   const [voltDraft, setVoltDraft] = useState({ url: "", token: "", repeat: "" });
+  const [voltUrlDraft, setVoltUrlDraft] = useState("");
   const [voltPending, setVoltPending] = useState(false);
   const [backupPending, setBackupPending] = useState(false);
   const [neptune, setNeptune] = useState<NeptuneAvailability>();
@@ -819,6 +820,7 @@ export function SettingsPage({
     try {
       const connection = await api<VoltConnectionSettings>("/api/settings/volt");
       setVoltConnection(connection);
+      setVoltUrlDraft(connection.url);
       setVoltDraft((current) => ({ ...current, url: connection.url }));
     } catch (error) {
       notify((error as Error).message, "error");
@@ -911,6 +913,7 @@ export function SettingsPage({
         body: JSON.stringify({ url: voltDraft.url, token: voltDraft.token }),
       });
       setVoltConnection(saved);
+      setVoltUrlDraft(saved.url);
       setVoltDraft({ url: saved.url, token: "", repeat: "" });
       setVoltDialogOpen(false);
       notify("Volt connection settings saved");
@@ -919,6 +922,25 @@ export function SettingsPage({
     } finally {
       setVoltPending(false);
     }
+  };
+
+  const commitVoltUrl = async () => {
+    if (voltUrlDraft === voltConnection.url) return;
+    if (!voltConnection.token_configured) {
+      setVoltDraft({ url: voltUrlDraft, token: "", repeat: "" });
+      setVoltDialogOpen(true);
+      return;
+    }
+    setVoltPending(true);
+    try {
+      const saved = await api<VoltConnectionSettings>("/api/settings/volt", { method: "PUT", body: JSON.stringify({ url: voltUrlDraft, token: "" }) });
+      setVoltConnection(saved);
+      setVoltUrlDraft(saved.url);
+      notify("Volt URL saved");
+    } catch (error) {
+      setVoltUrlDraft(voltConnection.url);
+      notify((error as Error).message, "error");
+    } finally { setVoltPending(false); }
   };
 
   const generateVoltToken = () => {
@@ -1058,13 +1080,13 @@ export function SettingsPage({
       <div className="settings-content security-content">
         <div className="settings-group">
           <h3>Changing Access Key</h3>
-          <p>Changing the operator Access Key revokes every other active browser session.</p>
-          <button type="button" className="section-action" onClick={() => setOpenSection("security")}>Change Access Key</button>
+          <p>Changing the Access Key revokes every other active browser session.</p>
+          <button type="button" className="section-action" onClick={() => { setAccessKey({ current: "", next: "", repeat: "" }); setOpenSection("security"); }}>Change Access Key</button>
         </div>
         <div className="settings-group">
-          <h3>Volt connection</h3>
-          <p>URL: <strong>{voltConnection.url || "not configured"}</strong><br />Kernel token: <strong>{voltConnection.token_configured ? "configured" : "not configured"}</strong></p>
-          <button type="button" className="section-action" onClick={() => { setVoltDraft({ url: voltConnection.url, token: "", repeat: "" }); setVoltDialogOpen(true); }}>Configure Volt</button>
+          <h3>Connection with Volt</h3>
+          <div className="security-connection-row"><label className="sr-only" htmlFor="security-volt-url">Volt URL</label><input id="security-volt-url" type="url" placeholder="https://volt.example.org" value={voltUrlDraft} disabled={voltPending} onChange={(event) => setVoltUrlDraft(event.target.value)} onBlur={() => void commitVoltUrl()} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /><div className="reachability-row"><span>Volt resolver</span><strong className={voltConnection.token_configured ? "is-reachable" : "is-unreachable"}>{voltConnection.token_configured ? "Token configured" : "Token not configured"}<i aria-hidden="true" /></strong></div></div>
+          <button type="button" className="section-action security-token-action" onClick={() => { setVoltDraft({ url: voltUrlDraft, token: "", repeat: "" }); setVoltDialogOpen(true); }}>Change VOLT_KERNEL_TOKEN · Kernel → Volt</button>
         </div>
       </div>
     );
@@ -1195,9 +1217,9 @@ export function SettingsPage({
           <form className="form-stack" onSubmit={changeAccessKey}>
             <label><span>Current Access Key</span><input type="password" autoComplete="current-password" required value={accessKey.current} onChange={(event) => setAccessKey({ ...accessKey, current: event.target.value })} /></label>
             <label><span>New Access Key</span><input type="password" autoComplete="new-password" required value={accessKey.next} onChange={(event) => setAccessKey({ ...accessKey, next: event.target.value })} /></label>
-            <label><span>Repeat new Access Key</span><input type="password" autoComplete="new-password" required value={accessKey.repeat} onChange={(event) => setAccessKey({ ...accessKey, repeat: event.target.value })} /></label>
+            <label><span>Repeat New Access Key</span><input type="password" autoComplete="new-password" required value={accessKey.repeat} onChange={(event) => setAccessKey({ ...accessKey, repeat: event.target.value })} /></label>
             <p className="hint">Applying a new key revokes every other operator session.</p>
-            <div className="dialog-actions"><button type="button" disabled={securityPending} onClick={() => setOpenSection(undefined)}>Cancel</button><button type="submit" disabled={securityPending}>{securityPending ? "Changing..." : "Change Access Key"}</button></div>
+            <div className="dialog-actions"><button type="submit" disabled={securityPending}>{securityPending ? "Changing..." : "Change Access Key"}</button></div>
           </form>
         </Modal>
       )}
