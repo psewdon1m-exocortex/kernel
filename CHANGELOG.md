@@ -4,6 +4,11 @@ This document specializes [Part 00 — system unification specification](https:/
 
 ## Unreleased
 
+## 0.3.4
+
+- Align the Volt connection settings controls with the shared service interaction
+  patterns while preserving the authenticated connection workflow.
+
 ## 0.3.3
 
 - Show an upgrade requirement when a local Neptune agent lacks the service-owned
