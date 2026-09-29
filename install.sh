@@ -90,6 +90,21 @@ prepare_neptune_mounts() {
   set_env NEPTUNE_EXPORT_TOKEN_HOST_FILE /etc/neptune/clients/kernel.export.token
 }
 
+prepare_updater_machine() {
+  getent group kernel-machine >/dev/null 2>&1 || groupadd --system kernel-machine
+  machine_gid=$(getent group kernel-machine | cut -d: -f3)
+  install -d -o root -g root -m 0700 /etc/exocortex
+  token_file=/etc/exocortex/updater-kernel.token
+  if [ ! -e "$token_file" ]; then umask 0077; random_hex 32 >"$token_file"; fi
+  [ -f "$token_file" ] && [ ! -L "$token_file" ] && [ "$(stat -c '%u' "$token_file")" = 0 ] || { echo 'Unsafe Updater machine token file' >&2; exit 2; }
+  chown root:kernel-machine "$token_file"
+  chmod 0640 "$token_file"
+  host_id=host-$(sha256sum /etc/machine-id | cut -c1-24)
+  set_env UPDATER_HOST_ID "$host_id"
+  set_env UPDATER_MACHINE_TOKEN_HOST_FILE "$token_file"
+  set_env KERNEL_MACHINE_TOKEN_GID "$machine_gid"
+}
+
 enable_backup() {
   require_root
   [ -f "$ENV_FILE" ] || { echo "Install Kernel first." >&2; exit 2; }
@@ -126,6 +141,7 @@ prepare() {
   fi
   install_command
   prepare_neptune_mounts
+  prepare_updater_machine
   echo "Kernel files are prepared in $INSTALL_DIR"
   echo "Edit only the OPERATOR INPUT section in $ENV_FILE"
   echo "Then run: sudo kernel-install"
@@ -168,8 +184,11 @@ install_kernel() {
   validate_install
   prepare_bootstrap_credentials
   prepare_neptune_mounts
+  prepare_updater_machine
   cd "$INSTALL_DIR"
   "$INSTALL_DIR/updater/install.sh" kernel "$ENV_FILE" "$INSTALL_DIR/updater/updater-linux-amd64"
+  updater host configure-kernel --url "$(get_env KERNEL_URL)" --token-file "$(get_env UPDATER_MACHINE_TOKEN_HOST_FILE)" "$(get_env UPDATER_HOST_ID)"
+  updater neptune install --bundle "$INSTALL_DIR/helpers/neptune"
   docker compose --env-file "$ENV_FILE" -f compose.production.yaml config -q
   docker compose --env-file "$ENV_FILE" -f compose.production.yaml up -d
   port=$(get_env KERNEL_LISTEN_PORT)

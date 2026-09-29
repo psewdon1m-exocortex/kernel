@@ -45,6 +45,8 @@ const config = {
   updaterSocketPath: process.env.UPDATER_SOCKET_PATH ?? "/run/exocortex/updater.sock",
   updaterHeadId: process.env.UPDATER_HEAD_ID ?? "kernel",
   updaterControlToken: process.env.UPDATER_CONTROL_TOKEN,
+	updaterMachineToken: process.env.UPDATER_MACHINE_TOKEN_FILE ? fs.readFileSync(path.resolve(process.env.UPDATER_MACHINE_TOKEN_FILE), "utf8").trim() : "",
+	updaterHostID: process.env.UPDATER_HOST_ID ?? "",
   neptuneSocketPath: process.env.NEPTUNE_SOCKET_PATH ?? "/run/neptune/neptuned.sock",
   neptuneProjectId: process.env.NEPTUNE_PROJECT_ID ?? "kernel",
   neptuneControlTokenFile: process.env.NEPTUNE_CONTROL_TOKEN_FILE,

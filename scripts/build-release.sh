@@ -29,6 +29,11 @@ cp "$root/compose.yaml" "$root/compose.production.yaml" "$root/compose.updater.y
   "$root/.env.example" "$root/install.sh" \
   "$root/nginx.security.conf" "$stage/"
 cp -R "$updater_dir" "$stage/updater"
+helper_root="${HOST_HELPER_BUNDLE_DIR:-$root/.release-inputs/helpers}"
+test -f "$helper_root/neptune/neptune-linux-release-linux-x64.json.sig.json"
+test -f "$helper_root/neptune/neptune-linux-$(tr -d '[:space:]' < "$root/.release/neptune.version")-linux-x64.tar.gz"
+mkdir -p "$stage/helpers"
+cp -R "$helper_root/neptune" "$stage/helpers/"
 find "$stage/updater" -type f -name '*.sh' -exec chmod 0755 {} +
 chmod 0755 "$stage/install.sh" "$stage/updater/updater-linux-amd64"
 sed -i \

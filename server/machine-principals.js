@@ -10,7 +10,7 @@ export function validatePrincipals(input) {
   if (!Array.isArray(input) || input.length > 256) throw invalid();
   const ids = new Set(), hashes = new Set();
   for (const item of input) {
-    if (!item || Object.keys(item).some(key => !["id", "token_sha256", "allowed_keys", "enabled", "wyvern"].includes(key)) ||
+    if (!item || Object.keys(item).some(key => !["id", "token_sha256", "allowed_keys", "enabled", "wyvern", "wyvern_enroll"].includes(key)) ||
         !ID.test(item.id) || !HASH.test(item.token_sha256) || typeof item.enabled !== "boolean" ||
         !Array.isArray(item.allowed_keys) || item.allowed_keys.length > 128 ||
         item.allowed_keys.some(key => typeof key !== "string" || key.length > 128 || !KEY.test(key)) ||
@@ -18,6 +18,8 @@ export function validatePrincipals(input) {
     ids.add(item.id); hashes.add(item.token_sha256);
     if (item.wyvern !== undefined && (!item.wyvern || Object.keys(item.wyvern).some(key => !["instance_id", "role"].includes(key)) ||
         !ID.test(item.wyvern.instance_id) || !["manager", "runtime"].includes(item.wyvern.role))) throw invalid();
+    if (item.wyvern_enroll !== undefined && (!item.wyvern_enroll || Object.keys(item.wyvern_enroll).some(key => !["instance_id", "host_id"].includes(key)) ||
+        !ID.test(item.wyvern_enroll.instance_id) || !ID.test(item.wyvern_enroll.host_id) || item.wyvern !== undefined)) throw invalid();
   }
   return input;
 }

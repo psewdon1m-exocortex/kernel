@@ -27,6 +27,8 @@ services:
       UPDATER_SOCKET_PATH: /run/exocortex/updater.sock
       UPDATER_HEAD_ID: "${UPDATER_HEAD_ID:-kernel}"
       UPDATER_CONTROL_TOKEN: "${UPDATER_CONTROL_TOKEN:?Set UPDATER_CONTROL_TOKEN in .env}"
+      UPDATER_MACHINE_TOKEN_FILE: /run/secrets/updater-machine-token
+      UPDATER_HOST_ID: "${UPDATER_HOST_ID:?Set UPDATER_HOST_ID during installation}"
       NEPTUNE_SOCKET_PATH: /run/neptune/neptuned.sock
       NEPTUNE_PROJECT_ID: "${NEPTUNE_PROJECT_ID:-kernel}"
       NEPTUNE_CONTROL_TOKEN_FILE: /run/secrets/neptune-control-token
@@ -40,6 +42,10 @@ services:
         source: "${NEPTUNE_SOCKET_DIR:-/run/neptune}"
         target: /run/neptune
       - type: bind
+        source: "${UPDATER_MACHINE_TOKEN_HOST_FILE:?Set UPDATER_MACHINE_TOKEN_HOST_FILE during installation}"
+        target: /run/secrets/updater-machine-token
+        read_only: true
+      - type: bind
         source: "${NEPTUNE_CONTROL_TOKEN_HOST_FILE:?Set NEPTUNE_CONTROL_TOKEN_HOST_FILE in .env}"
         target: /run/secrets/neptune-control-token
         read_only: true
@@ -48,6 +54,7 @@ services:
         target: /run/secrets/neptune-export-token
         read_only: true
     group_add:
+      - "${KERNEL_MACHINE_TOKEN_GID:?Set KERNEL_MACHINE_TOKEN_GID during installation}"
       - "${UPDATER_SOCKET_GID:?Set UPDATER_SOCKET_GID during VPS installation}"
       - "${NEPTUNE_SOCKET_GID:?Set NEPTUNE_SOCKET_GID during Neptune installation}"
     read_only: true

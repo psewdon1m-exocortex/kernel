@@ -30,11 +30,14 @@ and only then promotes the stable release and image tags.
 
 ## Автоматические резервные копии
 
-Updater автоматически устанавливает общий Neptune после настройки Register и
-доверия к релизам. Создайте в Saturn одноразовый Neptune setup code, откройте
-Settings → Backup, нажмите **Initialize Neptune** и введите код. Эта операция
-также установит отсутствующий агент. `sudo kernel-install backup` выполняет
-тот же сценарий через CLI. После подключения расписание и ручной запуск
+Установщик Kernel синхронно устанавливает или переиспользует один общий Neptune
+из подписанного пакета релиза. Kernel выдаёт Updater отдельный машинный токен
+для чтения источников релизов и регистрации Wyvern на этом хосте; операторский
+Access Key для этого не используется. Создайте в Saturn одноразовый Neptune
+setup code, откройте Settings → Backup, нажмите **Initialize Neptune** и введите
+код. Эта операция подключает профиль Kernel к уже установленному агенту.
+`sudo kernel-install backup` выполняет тот же сценарий через CLI. После
+подключения расписание и ручной запуск
 резервного копирования настраиваются в Settings → Backup. Для этого нужен
 Neptune с поддержкой `policy_protocol: 1` и совместимый Saturn; более старый
 агент показывает требование обновления вместо редактора политики.
@@ -373,3 +376,5 @@ dialog without a backup. No update ZIP is retained on the application host.
 Release builds pin the published Updater 0.5.0 installer by the SHA-256 in
 `.release/updater.sha256` and verify it before extraction. This digest was
 verified against the production-signed Updater manifest and existing trust key.
+The host-dependency release gate now requires Updater 0.6.3; update the pin and
+digest after that signed release is published.

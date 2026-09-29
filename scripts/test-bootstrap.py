@@ -45,12 +45,17 @@ with tempfile.TemporaryDirectory(prefix="kernel-bootstrap-test-") as directory:
     (helper / "systemd/updater.service").write_text("[Service]\nExecStart=/usr/bin/updater\n", encoding="utf-8")
     for scope in ["updater", "neptune", "gryphon"]:
         shutil.copyfile(output / "kernel.pem", helper / "release-trust" / (scope + ".pem"))
+    helper_bundles = work / "helpers" / "neptune"
+    helper_bundles.mkdir(parents=True)
+    (helper_bundles / "neptune-linux-release-linux-x64.json.sig.json").write_text("{}")
+    (helper_bundles / ("neptune-linux-" + (root / ".release/neptune.version").read_text().strip() + "-linux-x64.tar.gz")).write_bytes(b"synthetic signed helper fixture")
     env.update({
         "GITHUB_REPOSITORY": "psewdon1m-exocortex/kernel",
         "IMAGE_REFERENCE": "ghcr.io/psewdon1m-exocortex/kernel",
         "IMAGE_DIGEST": "sha256:" + "a" * 64,
         "UPDATER_BUNDLE_DIR": str(helper),
         "UPDATER_BUNDLE_VERSION": (root / ".release/updater.version").read_text(encoding="utf-8").strip(),
+        "HOST_HELPER_BUNDLE_DIR": str(work / "helpers"),
     })
     run(["bash", "scripts/build-release.sh", version, str(output)], env=env)
     manifest = output / "kernel-release.json"

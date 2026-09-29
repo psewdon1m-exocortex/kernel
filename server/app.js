@@ -431,6 +431,8 @@ export function createKernelApp(options) {
     updaterSocketPath = "/run/exocortex/updater.sock",
     updaterHeadId = "kernel",
     updaterControlToken = "",
+	updaterMachineToken = "",
+	updaterHostID = "",
     updaterClient = createUpdaterClient(updaterSocketPath, updaterControlToken),
     neptuneSocketPath = "/run/neptune/neptuned.sock",
     neptuneProjectId = "kernel",
@@ -452,6 +454,23 @@ export function createKernelApp(options) {
     auditRetentionDays,
     auditMaxBytes,
   });
+	if (updaterMachineToken || updaterHostID) {
+		if (!updaterMachineToken || !/^[a-z][a-z0-9_-]{0,63}$/.test(updaterHostID) || updaterMachineToken === apiToken) throw new Error("Invalid Updater machine bootstrap identity");
+		const token_sha256 = createHash("sha256").update(updaterMachineToken).digest("hex");
+		const id = "updater_" + updaterHostID;
+		const marker = "updater_machine_bootstrap_" + updaterHostID;
+		const principal = { id, token_sha256, enabled: true,
+			allowed_keys: ["repositories.updater.url", "repositories.neptune.url", "repositories.gryphon.url", "repositories.wyvern.url"],
+			wyvern_enroll: { instance_id: updaterHostID, host_id: updaterHostID } };
+		const current = loadPrincipals(store);
+		const existing = current.find(item => item.id === id);
+		const provisioned = store.getSetting(marker);
+		if (provisioned && provisioned !== token_sha256 || existing && existing.token_sha256 !== token_sha256) throw new Error("Updater machine identity changed; explicit migration is required");
+		store.transaction(() => {
+			if (!existing && !provisioned) store.setSetting(PRINCIPALS_SETTING, JSON.stringify(validatePrincipals([...current, principal])));
+			if (!provisioned) store.setSetting(marker, token_sha256);
+		});
+	}
   const storedVoltConnection = store.getVoltConnectionSettings();
   const backupPolicy = createBackupPolicy({
     client: neptuneClient, configured: () => Boolean(neptuneControlTokenFile),
@@ -1089,7 +1108,7 @@ export function createKernelApp(options) {
     catch (error) { next(error); }
   });
 
-  mountWyvern(app, { store, activeVoltClient, requireOperator, requireMachine, legacyToken: apiToken });
+  mountWyvern(app, { store, activeVoltClient, requireMachine, legacyToken: apiToken });
 
   app.put("/api/machine-principals/:id", requireOperator, (req, res, next) => {
     try {

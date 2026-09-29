@@ -24,6 +24,9 @@ values.update({
     "KERNEL_SESSION_SECRET": "s" * 48,
     "KERNEL_SERVICE_TOKEN": "t" * 32,
     "UPDATER_CONTROL_TOKEN": "u" * 48,
+    "UPDATER_HOST_ID": "host-test",
+    "UPDATER_MACHINE_TOKEN_HOST_FILE": "/run/contract/updater-machine.token",
+    "KERNEL_MACHINE_TOKEN_GID": "1003",
     "UPDATER_SOCKET_GID": "1001",
     "NEPTUNE_SOCKET_GID": "1002",
     "NEPTUNE_CONTROL_TOKEN_HOST_FILE": "/run/contract/neptune-control.token",
@@ -47,6 +50,9 @@ assert int(kernel["ports"][0]["published"]) == 18180
 assert kernel["read_only"] and "ALL" in kernel["cap_drop"]
 assert "no-new-privileges:true" in kernel["security_opt"]
 assert kernel["environment"]["KERNEL_COOKIE_SECURE"] == "true"
+assert kernel["environment"]["UPDATER_HOST_ID"] == "host-test"
+assert kernel["environment"]["UPDATER_MACHINE_TOKEN_FILE"] == "/run/secrets/updater-machine-token"
+assert any(mount.get("source") == "/run/contract/updater-machine.token" and mount.get("read_only") for mount in kernel["volumes"])
 assert kernel["environment"]["KERNEL_TRUSTED_PROXIES"] not in ["*", "0.0.0.0/0"]
 assert not any(re.search(r"nginx|coturn", name, re.I) for name in rendered["services"])
 assert not any(name in kernel["environment"] for name in ["VOLT_KERNEL_TOKEN", "SATURN_CLIENT_TOKEN"])
@@ -57,6 +63,8 @@ assert "KERNEL_ACCESS_KEY must contain at least" not in installer
 assert 'case "$access_key"' not in installer
 assert 'set_env KERNEL_ACCESS_KEY' not in installer
 assert "credential_root=/etc/exocortex/bootstrap-credentials" in installer
+assert "updater neptune install --bundle" in installer
+assert "updater host configure-kernel" in installer
 assert "chmod 0600" in installer and "chown root:root" in installer
 if shutil.which("sh"):
     for script in ["bootstrap.sh", "install.sh"]:

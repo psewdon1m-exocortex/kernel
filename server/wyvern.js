@@ -9,7 +9,7 @@ const keyFor = instance => "wyvern.instances." + instance + ".config";
 const credentialKey = (instance, adapter) => "wyvern.credentials." + sha(instance + ":" + adapter);
 const principalID = (instance, role) => "wyvern_" + role + "_" + sha(instance).slice(0, 24);
 
-export function mountWyvern(app, { store, activeVoltClient, requireOperator, requireMachine, legacyToken }) {
+export function mountWyvern(app, { store, activeVoltClient, requireMachine, legacyToken }) {
   const pending = new Map();
   const lock = async (instance, callback) => {
     if (pending.has(instance)) fail(409, "WYVERN_OPERATION_IN_PROGRESS");
@@ -58,23 +58,32 @@ export function mountWyvern(app, { store, activeVoltClient, requireOperator, req
     if (!ID.test(instance) || !grant || grant.instance_id !== instance || grant.role !== "manager" && !(allowRuntime && grant.role === "runtime")) fail(403, "WYVERN_SCOPE_DENIED");
     return instance;
   }
-  app.post("/api/wyvern/instances/:instance/enroll", requireOperator, async (req, res, next) => {
+  app.post("/api/wyvern/instances/:instance/enroll", requireMachine, async (req, res, next) => {
     try {
       const instance = req.params.instance;
-      fields(req.body, ["manager_token_sha256", "runtime_token_sha256"], ["manager_token_sha256", "runtime_token_sha256"]);
+      const grant = req.auth?.principal?.wyvern_enroll;
+      if (!grant || grant.instance_id !== instance || grant.host_id !== req.body?.host_id) fail(403, "WYVERN_ENROLL_SCOPE_DENIED");
+      fields(req.body, ["host_id", "manager_token_sha256", "runtime_token_sha256"], ["host_id", "manager_token_sha256", "runtime_token_sha256"]);
       if (!ID.test(instance) || !HASH.test(req.body.manager_token_sha256) || !HASH.test(req.body.runtime_token_sha256) ||
-          req.body.manager_token_sha256 === req.body.runtime_token_sha256 || [req.body.manager_token_sha256, req.body.runtime_token_sha256].includes(sha(legacyToken || ""))) fail(400, "WYVERN_IDENTITY_INVALID");
+          req.body.manager_token_sha256 === req.body.runtime_token_sha256 || [req.body.manager_token_sha256, req.body.runtime_token_sha256].includes(sha(legacyToken || "")) ||
+          [req.body.manager_token_sha256, req.body.runtime_token_sha256].includes(req.auth.principal.token_sha256)) fail(400, "WYVERN_IDENTITY_INVALID");
       await lock(instance, async () => {
         const result = await current(instance, { initialize: true });
-        const principals = loadPrincipals(store).filter(item => ![principalID(instance, "manager"), principalID(instance, "runtime")].includes(item.id));
+        const principals = loadPrincipals(store);
+        const existing = ["manager", "runtime"].map(role => principals.find(item => item.id === principalID(instance, role)));
+        if (existing.some(Boolean)) {
+          if (existing.some((item, index) => !item || item.token_sha256 !== req.body[["manager", "runtime"][index] + "_token_sha256"])) fail(409, "WYVERN_IDENTITY_CONFLICT");
+          res.json({ schema: "exocortex.kernel.wyvern.enrollment.v1", instance_id: instance, config_key: keyFor(instance), revision: result.revision });
+          return;
+        }
         for (const role of ["manager", "runtime"]) principals.push({ id: principalID(instance, role), enabled: true,
           token_sha256: req.body[role + "_token_sha256"], allowed_keys: role === "runtime" ? Object.keys(result.metadata.references) : [], wyvern: { instance_id: instance, role } });
         store.transaction(() => {
           if (result.metadata.repository_ref && !store.listRegisterEntries().some(row => row.key === "repositories.wyvern.url")) {
-            store.upsertRegisterEntries([{ key: "repositories.wyvern.url", value: result.metadata.repository_ref, description: "Wyvern release repository" }], "operator", { replace: false });
+            store.upsertRegisterEntries([{ key: "repositories.wyvern.url", value: result.metadata.repository_ref, description: "Wyvern release repository" }], req.auth.actor, { replace: false });
           }
           store.setSetting(PRINCIPALS_SETTING, JSON.stringify(validatePrincipals(principals)));
-          store.audit("operator", "wyvern.enroll", instance, "success", { revision: result.revision });
+          store.audit(req.auth.actor, "wyvern.enroll", instance, "success", { revision: result.revision, host_id: grant.host_id });
         });
         res.json({ schema: "exocortex.kernel.wyvern.enrollment.v1", instance_id: instance, config_key: keyFor(instance), revision: result.revision });
       });
