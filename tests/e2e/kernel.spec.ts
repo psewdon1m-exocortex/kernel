@@ -155,13 +155,12 @@ test("operator can navigate every Kernel section", async ({ page }) => {
   const updatesSection = page.locator("[data-settings-section='updates']");
   const updatesGeometry = await updatesSection.boundingBox();
   expect(Math.abs((updatesGeometry?.width ?? 0) - 1610)).toBeLessThanOrEqual(1);
-  // .docs/src/updates.png defines the 566px minimum; content may grow without clipping.
-  expect(updatesGeometry?.height ?? 0).toBeGreaterThanOrEqual(566);
+  expect(updatesGeometry?.height ?? 0).toBeLessThan(500);
   await expect(updatesSection.getByText("Local updater agent:", { exact: true })).toBeVisible();
   await expect(updatesSection.getByText("Kernel Register:", { exact: true })).toBeVisible();
   await expect(updatesSection.getByRole("button", { name: "Check for updates" })).toBeVisible();
-  await expect(updatesSection.getByRole("heading", { name: "Updater version", exact: true })).toBeVisible();
-  await expect(updatesSection.getByRole("button", { name: "Check Updater for updates" })).toBeVisible();
+  await expect(updatesSection.getByRole("heading", { name: "Updater version", exact: true })).toHaveCount(0);
+  await expect(updatesSection.getByRole("button", { name: "Check Updater for updates" })).toHaveCount(0);
   await page.route("**/api/update-flow/check", route => route.fulfill({ json: {
     component: "kernel", installed_version: "0.2.14", available_version: "0.2.15", update_available: true, updater_version: "0.5.0",
   } }));
