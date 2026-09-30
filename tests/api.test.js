@@ -835,12 +835,11 @@ describe("Kernel API", () => {
     assert.equal(updaterStatus.body.available, true);
     assert.equal(updaterStatus.body.kernel_version, "0.1.1");
     const updaterUpdate = await agent.post("/api/updater/self-update/check");
-    assert.equal(updaterUpdate.status, 200);
-    assert.equal(updaterUpdate.body.service, "updater");
-    assert.equal(updaterUpdate.body.installed_version, "0.1.0");
-    assert.equal(updaterUpdate.body.available_version, "0.1.1");
-    assert.equal(updaterUpdate.body.update_available, true);
-    assert.equal(updaterUpdate.body.repository_url, "https://github.com/psewdon1m-exocortex/updater");
+    assert.equal(updaterUpdate.status, 403);
+    assert.match(updaterUpdate.body.error, /updater tui/);
+    assert.equal((await agent.post("/api/updater/self-update/install")).status, 403);
+    assert.equal((await agent.post("/api/update-flow/check").send({ component: "updater" })).status, 403);
+    assert.equal((await agent.post("/api/update-flow/install/updater").send({ version: "0.2.0", request_id: "01234567-0123-4123-8123-012345678901" })).status, 403);
     assert.equal((await agent.post("/api/backups")).status, 410);
     const stagedDownload = await agent.post("/api/update-flow/backup").send({ version: "0.2.0" }).buffer(true)
       .parse((response, callback) => { const chunks=[];response.on("data",chunk=>chunks.push(chunk));response.on("end",()=>callback(null,Buffer.concat(chunks))); });

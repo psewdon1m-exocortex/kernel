@@ -165,7 +165,7 @@ docker compose ps`}</pre>
         <li><strong>Appearance:</strong> accent color preview plus Sidebar behavior.</li>
         <li><strong>Security:</strong> Access Key rotation and session revocation.</li>
         <li><strong>Backup:</strong> complete archive creation, direct local-file inspection and confirmed restore, plus local Neptune status and initialization.</li>
-        <li><strong>Updates:</strong> independent Kernel Register and local Updater reachability, Kernel release discovery, and a separate Updater version check.</li>
+        <li><strong>Updates:</strong> independent Kernel Register and local Updater reachability and Kernel release discovery. Check and update Updater through <code>sudo updater tui</code> on the host.</li>
         <li><strong>Logs:</strong> live bounded audit events, pagination, and diagnostic export.</li>
         <li><strong>Documents:</strong> local upload, revision history, and restore.</li>
       </ul>

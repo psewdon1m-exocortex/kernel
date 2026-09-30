@@ -85,9 +85,6 @@ export function createUpdaterClient(socketPath, controlToken = "") {
     createUpdate(payload) {
       return request(socketPath, controlToken, "POST", "/v1/updates", payload, 30_000);
     },
-    selfUpdate(headId) {
-      return request(socketPath, controlToken, "POST", "/v1/lifecycle/updater-self-update", { head_id: headId }, 30_000);
-    },
     updateNeptune(payload) {
       return request(socketPath, controlToken, "POST", "/v1/components/neptune-linux/update", payload, 300_000);
     },

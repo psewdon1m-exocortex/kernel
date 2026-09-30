@@ -1690,41 +1690,11 @@ export function createKernelApp(options) {
   });
 
   app.post("/api/updater/self-update/check", requireOperator, async (req, res, next) => {
-    try {
-      const repositoryUrl = (await resolveCurrentRegisterKeys(["repositories.updater.url"]))["repositories.updater.url"];
-      if (!repositoryUrl) {
-        throw Object.assign(
-          new Error("Register key repositories.updater.url is missing"),
-          { status: 409 },
-        );
-      }
-      const status = await updaterClient.status();
-      if (!status.available || !status.version) {
-        throw Object.assign(new Error("Updater is not installed or is unavailable on this VPS"), { status: 503 });
-      }
-      const result = await checkGitHubRelease({
-        repositoryUrl,
-        service: "updater",
-        currentVersion: status.version,
-        fetchImpl: releaseFetch,
-        timeoutMs: updateCheckTimeoutMs,
-      });
-      store.audit(safeActor(req), "updater.self-update.check", "updater", "success", {
-        installed_version: status.version,
-        available_version: result.available_version,
-        update_available: result.update_available,
-      });
-      res.json(result);
-    } catch (error) {
-      store.audit(safeActor(req), "updater.self-update.check", "updater", "error", {
-        message: error?.message ?? String(error),
-      });
-      next(error);
-    }
+    res.status(403).json({ error: "Check Updater releases with sudo updater tui on the host" });
   });
 
   app.post("/api/updater/self-update/install", requireOperator, async (_req, res, next) => {
-    try { res.status(202).json(await updaterClient.selfUpdate(updaterHeadId)); } catch (error) { next(error); }
+    res.status(403).json({ error: "Update Updater with sudo updater tui on the host" });
   });
 
   if (fs.existsSync(distDir)) {

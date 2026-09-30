@@ -1135,12 +1135,6 @@ export function SettingsPage({
           </div>
           <button type="button" className="section-action update-check-action" onClick={() => openKernelUpdates()}>Check for updates</button>
         </div>
-        <div className="settings-group updater-version-group">
-          <h3>Updater version</h3>
-          <p>Current installed version: {updaterStatus?.version ?? "unavailable"}</p>
-          <button type="button" className="section-action" onClick={() => openKernelUpdates("updater")}>Check Updater for updates</button>
-
-        </div>
       </div>
     );
 

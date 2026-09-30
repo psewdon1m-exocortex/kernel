@@ -235,15 +235,12 @@ strong, b, .metric-main, .section-title { font-weight: 700; }
 .backup-content .settings-group h3, .updates-content .settings-group h3 { line-height: 1.2; }
 .backup-content .settings-group > p { margin-bottom:20px; }
 .backup-neptune-actions { display:flex; flex-wrap:wrap; gap:12px; margin-top:20px; }
-[data-settings-section="updates"] { min-height: 566px; }
+[data-settings-section="updates"] { min-height: 0; }
 .updates-content { display:grid; gap:40px; padding:28px 32px 54px 38px; }
 .update-pipeline-group p { margin-bottom: 6px; }
 .update-pipeline-group p:last-child { margin-bottom: 0; }
 .update-statuses { display: grid; gap: 12px; margin-top: 24px; }
 .update-check-action { margin-top:30px; }
-.updater-version-group { margin-top: 47px; }
-.updater-version-group p { margin-bottom: 12px; }
-.updater-version-group .inline-error, .updater-version-group .updater-self-update-hint { margin-top: 12px; margin-bottom: 0; }
 .reachability-row { width: 100%; min-height: 40px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--line-inner); padding: 8px 16px; }
 .reachability-row strong { display: flex; align-items: center; gap: 14px; font-weight: 400; }
 .reachability-row i { width: 18px; height: 18px; display: block; background: currentColor; }
