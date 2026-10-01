@@ -1441,7 +1441,7 @@ export function createKernelApp(options) {
   app.get("/api/neptune/policy", requireOperator, async (_req, res) => res.json(await backupPolicy.read()));
   app.put("/api/neptune/policy", requireOperator, async (req, res) => res.json(await backupPolicy.mutate(req.body)));
   app.get("/api/neptune/policy/runs", requireOperator, async (_req, res) => res.json(await backupPolicy.runs()));
-  app.post("/api/neptune/policy/runs", requireOperator, async (req, res) => res.status(202).json(await backupPolicy.runs("POST", req.body)));
+  app.post("/api/neptune/policy/runs", requireOperator, (_req, res) => res.status(403).json({ message: "Manual Neptune runs are unavailable; configure the automatic schedule in Settings" }));
 
   app.post("/api/neptune/initialize", requireOperator, async (req, res, next) => {
     try {
@@ -1471,34 +1471,22 @@ export function createKernelApp(options) {
     res.status(426).json({ message: "Use the scoped policy run endpoint with a stable request ID" });
   });
 
-  app.post("/api/neptune/update/check", requireOperator, async (req, res, next) => {
-    try {
-      const repositoryUrl = (await resolveCurrentRegisterKeys(["repositories.neptune.url"]))["repositories.neptune.url"];
-      if (!repositoryUrl) throw Object.assign(new Error("Register key repositories.neptune.url is missing"), { status: 409 });
-      const status = await neptuneClient.status();
-      const result = await checkGitHubRelease({ repositoryUrl, service: "neptune-linux", currentVersion: status.version, fetchImpl: releaseFetch, timeoutMs: updateCheckTimeoutMs });
-      store.audit(safeActor(req), "neptune.update.check", "neptune-linux", "success", { installed_version: status.version, available_version: result.available_version });
-      res.json(result);
-    } catch (error) { next(error); }
+  app.post("/api/neptune/update/check", requireOperator, (_req, res) => {
+    res.status(403).json({ message: "Check Neptune releases with sudo updater tui on the host" });
   });
 
-  app.post("/api/neptune/update/install", requireOperator, async (req, res, next) => {
+  app.post("/api/neptune/unlink", requireOperator, async (req, res, next) => {
     try {
-      const repositoryUrl = (await resolveCurrentRegisterKeys(["repositories.neptune.url"]))["repositories.neptune.url"];
-      const requestedVersion = String(req.body?.version ?? "");
-      if (!repositoryUrl) throw Object.assign(new Error("Register key repositories.neptune.url is missing"), { status: 409 });
-      const status = await neptuneClient.status();
-      const update = await checkGitHubRelease({ repositoryUrl, service: "neptune-linux", currentVersion: status.version, fetchImpl: releaseFetch, timeoutMs: updateCheckTimeoutMs });
-      if (!update.update_available || update.available_version !== requestedVersion) {
-        throw Object.assign(new Error("Requested Neptune version is not the current upgrade candidate"), { status: 409 });
-      }
-      const result = await updaterClient.updateNeptune({ head_id: updaterHeadId, version: requestedVersion });
-      store.audit(safeActor(req), "neptune.update.install", "neptune-linux", "success", { version: requestedVersion });
-      res.json(result);
+      const job = await updaterClient.unlinkNeptune({ headId: updaterHeadId, projectId: neptuneProjectId, requestId: req.body?.request_id });
+      store.audit(safeActor(req), "neptune.unlink", "neptune-linux", "success", { job_id: job.id });
+      res.status(202).json(job);
     } catch (error) { next(error); }
   });
+  app.post("/api/neptune/update/install", requireOperator, (_req, res) => {
+    res.status(403).json({ message: "Update Neptune with sudo updater tui on the host" });
+  });
 
-  mountUpdateFlow(app, { prefix: "/api/update-flow", service: "kernel", authorize: requireOperator, headId: updaterHeadId,
+  mountUpdateFlow(app, { prefix: "/api/update-flow", service: "kernel", helpers: [], authorize: requireOperator, headId: updaterHeadId,
     token: () => updaterControlToken, client: updaterClient,
     buildBackup: async () => ({ archive: await currentBackup(), filename: `kernel-${new Date().toISOString().replaceAll(":", "-")}.zip` }),
     onJob: job => store.setLastUpdateJobId(job.id),

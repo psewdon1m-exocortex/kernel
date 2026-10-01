@@ -84,7 +84,7 @@ export interface NeptuneAvailability {
   configured?: boolean;
   installed: boolean | null;
   linked: boolean | null;
-  state: "linked" | "unlinked" | "unavailable" | "authorization_failed" | "upgrade_required";
+  state: "linked" | "unlinking" | "unlinked" | "unavailable" | "authorization_failed" | "upgrade_required";
   version?: string | null;
   policy_protocol?: number;
   policy_supported?: boolean;

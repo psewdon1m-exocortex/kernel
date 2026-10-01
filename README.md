@@ -370,8 +370,9 @@ The current six-service deployment, trust, recovery and acceptance contract is d
 
 See [Update protocol, saved ZIP and first migration](docs/UPDATE-PROTOCOL.md).
 The UI uses Updater **0.5.0**, an exact selected version, the standard ZIP saved
-on the operator PC, and durable status/progress. Helper updates use the same
-dialog without a backup. No update ZIP is retained on the application host.
+on the operator PC, and durable status/progress for Kernel releases. Shared
+Updater, Neptune, Gryphon and Wyvern release operations use `sudo updater tui`
+on the host. No update ZIP is retained on the application host.
 
 Release builds pin the published Updater 0.5.0 installer by the SHA-256 in
 `.release/updater.sha256` and verify it before extraction. This digest was

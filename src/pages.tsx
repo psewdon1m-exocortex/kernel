@@ -1,6 +1,6 @@
 import { ServiceLogsPanel } from "./ServiceLogsPanel";
 import { openKernelUpdates } from "./update-flow.js";
-import { openAgentInitialization, type InitializationJob } from "./agent-initialize.js";
+import { openAgentInitialization, confirmAgentAction, type InitializationJob } from "./agent-initialize.js";
 import { BackupPolicyPanel } from "./service-agents";
 import {
   useCallback,
@@ -763,6 +763,7 @@ export function SettingsPage({
   const [voltPending, setVoltPending] = useState(false);
   const [backupPending, setBackupPending] = useState(false);
   const [neptune, setNeptune] = useState<NeptuneAvailability>();
+  const [neptuneUnlinking, setNeptuneUnlinking] = useState(false);
   const [inspection, setInspection] = useState<BackupInspection>();
   const backupInputRef = useRef<HTMLInputElement>(null);
   const [updaterStatus, setUpdaterStatus] = useState<UpdaterStatus>();
@@ -815,6 +816,25 @@ export function SettingsPage({
     },
     onComplete: loadNeptune,
   });
+
+  const unlinkNeptune = async () => {
+    if (!(["linked", "unlinking"].includes(neptune?.state ?? "")) || !await confirmAgentAction({
+      title: "Unlink Neptune agent", confirmLabel: "Unlink agent",
+      message: "Automatic backups for Kernel will stop. Saved archives remain in Saturn. Other services and the shared Neptune agent stay connected. A new setup code will be needed to link Kernel again.",
+    })) return;
+    setNeptuneUnlinking(true);
+    try {
+      const accepted = await api<{ id: string }>("/api/neptune/unlink", { method: "POST", body: "{}" });
+      for (let attempt = 0; attempt < 600; attempt += 1) {
+        const job = await api<{ state: string; message?: string }>(`/api/updater/jobs/${encodeURIComponent(accepted.id)}`);
+        if (job.state === "COMPLETED") { await loadNeptune(); notify("Kernel unlinked from Neptune. Automatic backups are off."); return; }
+        if (job.state === "FAILED") throw new Error(job.message || "Neptune unlink failed");
+        await new Promise(resolve => setTimeout(resolve, 1500));
+      }
+      throw new Error("Neptune is still finishing an accepted backup. Check the agent status before retrying.");
+    } catch (error) { notify((error as Error).message, "error"); }
+    finally { setNeptuneUnlinking(false); }
+  };
 
   const loadVoltConnection = useCallback(async () => {
     try {
@@ -1094,9 +1114,20 @@ export function SettingsPage({
     if (id === "backup") return (
       <div className="settings-content backup-content">
         <div className="settings-group">
-          <h3>System snapshot</h3>
+          <h3>Manual snapshot</h3>
           <p>Logical snapshots contain documents, revisions, Register, Topology, settings and retained audit events, but no Access Key or service token.</p>
           <button type="button" className="section-action" disabled={backupPending} onClick={() => void createBackup()}>{backupPending ? "Creating..." : "Create and download snapshot"}</button>
+        </div>
+        <div className="settings-group backup-neptune-group">
+          <h3>Automatic backup to Saturn</h3>
+          <p>Neptune transfers the recovery archive to Saturn on the saved schedule.</p>
+          <div className="reachability-row"><span>Local Neptune agent:</span><strong className={!neptune || neptune.configured === false ? "is-checking" : neptune.state === "linked" ? "is-reachable" : "is-unreachable"}>{!neptune ? "Checking…" : neptune.configured === false ? "Not configured" : neptune.state === "linked" ? "Service Reachability" : neptune.state === "unlinking" ? "Unlinking" : neptune.state === "upgrade_required" ? "Upgrade required · policy protocol unavailable" : neptune.state === "unlinked" ? "Detected · not linked" : neptune.state === "authorization_failed" ? "Authorization failed" : neptune.linked ? "Offline · previously linked" : "Unavailable · installation unknown"}<i aria-hidden="true" /></strong></div>
+          {!neptune ? null : neptune.state === "upgrade_required" || neptune.policy_supported === false
+            ? <p>Update Saturn and Neptune to enable service-owned backup policy controls.</p>
+            : <BackupPolicyPanel service="kernel" base="/api/neptune/policy" />}
+          {neptune?.state === "linked" || neptune?.linked === true ? <button type="button" className="section-action backup-unlink-action" disabled={neptuneUnlinking || !["linked", "unlinking"].includes(neptune?.state ?? "")} onClick={() => void unlinkNeptune()}>{neptuneUnlinking ? "Unlinking Neptune…" : neptune?.state === "unlinking" ? "Retry Neptune unlink" : "Unlink Neptune agent"}</button>
+            : neptune && (neptune.state === "unlinked" || neptune.installed === false || neptune.state === "authorization_failed" || neptune.linked === false)
+              ? <button type="button" className="section-action backup-link-action" onClick={initializeNeptune}>Link Neptune agent</button> : null}
         </div>
         <div className="settings-group">
           <h3>Restore snapshot</h3>
@@ -1104,16 +1135,6 @@ export function SettingsPage({
           <button type="button" className="section-action" disabled={backupPending} onClick={() => { setInspection(undefined); if (backupInputRef.current) { backupInputRef.current.value = ""; backupInputRef.current.click(); } }}>{backupPending ? "Inspecting..." : "Browse local snapshot archive"}</button>
           <input ref={backupInputRef} hidden type="file" accept=".zip,application/zip,.json,application/json" onChange={(event) => { const file = event.target.files?.[0]; if (!file) return; setOpenSection("backup"); void inspectBackup(file); }} />
         </div>
-        <div className="settings-group backup-neptune-group">
-          <h3>Automatic backup to Saturn</h3>
-          <p>Set the archive schedule and request backups here. Neptune transfers the archive to remote storage.</p>
-          <div className="reachability-row"><span>Local Neptune agent:</span><strong className={!neptune || neptune.configured === false ? "is-checking" : neptune.state === "linked" ? "is-reachable" : "is-unreachable"}>{!neptune ? "Checking…" : neptune.configured === false ? "Not configured" : neptune.state === "linked" ? "Service Reachability" : neptune.state === "upgrade_required" ? "Upgrade required · policy protocol unavailable" : neptune.state === "unlinked" ? "Detected · not linked" : neptune.state === "authorization_failed" ? "Authorization failed" : neptune.linked ? "Offline · previously linked" : "Unavailable · installation unknown"}<i aria-hidden="true" /></strong></div>
-          {neptune && (neptune.state === "unlinked" || neptune.installed === false) ? <div className="backup-neptune-actions"><button type="button" className="section-action" onClick={initializeNeptune}>Initialize</button></div> : null}
-          {!neptune ? null : neptune.state === "upgrade_required" || neptune.policy_supported === false
-            ? <p>Update Saturn and Neptune to enable service-owned backup policy controls.</p>
-            : <BackupPolicyPanel service="kernel" base="/api/neptune/policy" />}
-        </div>
-        <div className="settings-group"><h3>Neptune version</h3><p>Current installed version: {neptune?.version ?? "Unavailable"}</p><button type="button" className="section-action" onClick={() => openKernelUpdates("neptune")}>Check Neptune for updates</button></div>
       </div>
     );
 

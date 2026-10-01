@@ -519,3 +519,11 @@ strong, b, .metric-main, .section-title { font-weight: 700; }
 /* Shared Settings body inset; narrow layouts keep their existing safe gutters. */
 @media(min-width:721px) { .settings-section .settings-content { padding-top:28px; padding-left:38px; padding-right:32px; } }
 .logs-command-band { margin-bottom:16px; }
+/* Backup reference: manual export, agent schedule, then restore. */
+:root .settings-section[data-settings-section="backup"] .settings-content.backup-content { gap:54px; padding-bottom:30px; }
+[data-settings-section="backup"] .settings-group:first-child > .section-action,
+[data-settings-section="backup"] .settings-group:last-child > .section-action { width:min(742px,100%); }
+[data-settings-section="backup"] .backup-neptune-group .exo-backup-policy { margin-top:10px; }
+[data-settings-section="backup"] .backup-neptune-group > :is(.backup-link-action,.backup-unlink-action) { width:280px; margin-top:20px; }
+[data-settings-section="backup"] .backup-unlink-action { color:var(--danger) !important; border-color:var(--danger) !important; }
+[data-settings-section="backup"] .backup-unlink-action:disabled { opacity:1; }

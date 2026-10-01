@@ -190,6 +190,11 @@ describe("Kernel API", () => {
     const scheduled = await agent.put("/api/neptune/schedule").send({ enabled: true, interval_hours: 6 });
     assert.equal(scheduled.status, 426);
     assert.equal(neptuneSchedule, undefined);
+    assert.equal((await agent.post("/api/neptune/policy/runs").send({ pipeline: "archive" })).status, 403);
+    assert.equal((await agent.post("/api/neptune/update/check")).status, 403);
+    assert.equal((await agent.post("/api/neptune/update/install").send({ version: "0.2.0" })).status, 403);
+    assert.equal((await agent.post("/api/update-flow/check").send({ component: "neptune" })).status, 403);
+    assert.equal((await agent.post("/api/update-flow/install/neptune").send({ version: "0.2.0" })).status, 403);
 
     const unauthorizedExport = await request(app).post("/api/internal/neptune/backup");
     assert.equal(unauthorizedExport.status, 401);

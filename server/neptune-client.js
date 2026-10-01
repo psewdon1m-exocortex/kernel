@@ -61,8 +61,9 @@ export function createNeptuneClient(socketPath, projectId, controlTokenFile, tra
         try {
           const policyProtocol = Number.isSafeInteger(health.policy_protocol) ? health.policy_protocol : 0;
           const policySupported = policyProtocol >= REQUIRED_POLICY_PROTOCOL;
-          lastKnown = { installed: true, linked: true, ...(await this.status()),
-            state: policySupported ? "linked" : "upgrade_required", policy_protocol: policyProtocol,
+          const status = await this.status();
+          lastKnown = { installed: true, linked: true, ...status,
+            state: status.project?.unlinking ? "unlinking" : policySupported ? "linked" : "upgrade_required", policy_protocol: policyProtocol,
             policy_supported: policySupported, required_policy_protocol: REQUIRED_POLICY_PROTOCOL,
             last_verified_at: new Date().toISOString() };
           return lastKnown;

@@ -85,12 +85,14 @@ export function createUpdaterClient(socketPath, controlToken = "") {
     createUpdate(payload) {
       return request(socketPath, controlToken, "POST", "/v1/updates", payload, 30_000);
     },
-    updateNeptune(payload) {
-      return request(socketPath, controlToken, "POST", "/v1/components/neptune-linux/update", payload, 300_000);
-    },
     initializeNeptune({ headId, projectId, exportUrl, enrollmentCode, requestId = randomUUID() }) {
       return request(socketPath, controlToken, "POST", "/v1/components/neptune-linux/initialize", {
         request_id: requestId, head_id: headId, project_id: projectId, export_url: exportUrl, enrollment_code: enrollmentCode,
+    }, 30_000);
+    },
+    unlinkNeptune({ headId, projectId, requestId = randomUUID() }) {
+      return request(socketPath, controlToken, "POST", "/v1/components/neptune-linux/unlink", {
+        request_id: requestId, head_id: headId, project_id: projectId,
       }, 30_000);
     },
     neptuneInitialization(id, headId) {
