@@ -213,6 +213,14 @@ verifier. Метаданные identities/grants входят в логичес�
 исходные machine credentials восстанавливаются отдельно. Общий bootstrap
 token нельзя переиспользовать как scoped principal.
 
+При bootstrap Kernel выдаёт Updater отдельный host-bound principal с доступом
+к `repositories.updater.url`, `repositories.neptune.url`,
+`repositories.gryphon.url`, `repositories.wyvern.url` и
+`repositories.window.url`. Версия 0.3.8 один раз добавляет Window к прежнему
+стандартному набору из четырёх ключей. Если оператор уже менял список ключей
+или отключил principal, миграция сохраняет его решение; последующий отзыв
+Window также не отменяется при перезапуске.
+
 `POST /api/v1/register/resolve` принимает необязательные
 `expected_register_revision` и `expected_volt_revisions` (key → revision).
 Несовпадение возвращает 409 без разрешённых значений. Проверки выполняются

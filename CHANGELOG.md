@@ -4,6 +4,12 @@ This document specializes [Part 00 — system unification specification](https:/
 
 ## Unreleased
 
+## 0.3.8
+
+- Grant Updater's host machine principal access to the Window release source on
+  new installations, and migrate the original four-key bootstrap grant once on
+  existing hosts. Preserve explicit principal revocation and custom scopes.
+
 ## 0.3.4
 
 - Align the Volt connection settings controls with the shared service interaction

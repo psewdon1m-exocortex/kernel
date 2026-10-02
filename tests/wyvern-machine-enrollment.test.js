@@ -56,3 +56,78 @@ test("revoked Updater machine principal is not recreated by a Kernel restart", a
   t.after(() => { restarted.locals.kernel.close(); rmSync(directory, { recursive: true, force: true }); });
   assert.equal((await request(restarted).get("/api/v1/register/snapshot").set("Authorization", "Bearer " + options.updaterMachineToken)).status, 401);
 });
+
+test("new Updater machine principal can resolve the Window release source", async t => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "kernel-window-principal-"));
+  const machine = "machine-" + "m".repeat(32);
+  const app = createKernelApp({ dataDir: directory, defaultsDir: path.resolve("data/defaults"), distDir: path.join(directory, "none"),
+    accessKey: "operator", sessionSecret: "s".repeat(40), apiToken: "legacy-" + "l".repeat(32),
+    updaterMachineToken: machine, updaterHostID: host, diskPath: directory,
+    voltClient: { async resolve(references) { return { values: Object.fromEntries(references.map(ref => [ref, { value: "https://github.com/example/window", revision: 1 }])) }; } },
+  });
+  t.after(() => { app.locals.kernel.close(); rmSync(directory, { recursive: true, force: true }); });
+  app.locals.kernel.store.upsertRegisterEntries([
+    { key: "repositories.window.url", value: configRef, description: "Window release source" },
+  ], "test", { replace: true });
+  const principal = JSON.parse(app.locals.kernel.store.getSetting(PRINCIPALS_SETTING))[0];
+  assert.equal(principal.token_sha256, sha(machine));
+  assert.ok(principal.allowed_keys.includes("repositories.window.url"));
+  const response = await request(app).post("/api/v1/register/resolve").set("Authorization", "Bearer " + machine)
+    .send({ keys: ["repositories.window.url"] });
+  assert.equal(response.status, 200);
+  assert.equal(response.body.values["repositories.window.url"].value, "https://github.com/example/window");
+});
+
+test("legacy Updater grant gains Window once while later operator restrictions persist", async t => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "kernel-window-migration-"));
+  const options = { dataDir: directory, defaultsDir: path.resolve("data/defaults"), distDir: path.join(directory, "none"),
+    accessKey: "operator", sessionSecret: "s".repeat(40), apiToken: "legacy-" + "l".repeat(32),
+    updaterMachineToken: "machine-" + "m".repeat(32), updaterHostID: host, diskPath: directory };
+  const principal = app => JSON.parse(app.locals.kernel.store.getSetting(PRINCIPALS_SETTING))[0];
+  const windowGrantMarker = "updater_machine_window_grant_v1_" + host;
+  let app = createKernelApp(options);
+  t.after(() => { app.locals.kernel.close(); rmSync(directory, { recursive: true, force: true }); });
+  const original = principal(app);
+  const legacyKeys = original.allowed_keys.filter(key => key !== "repositories.window.url");
+  app.locals.kernel.store.setSetting(PRINCIPALS_SETTING, JSON.stringify([{ ...original, allowed_keys: legacyKeys }]));
+  app.locals.kernel.store.setSetting(windowGrantMarker, "");
+  app.locals.kernel.close();
+
+  app = createKernelApp(options);
+  const migrated = principal(app);
+  assert.deepEqual(migrated, { ...original, allowed_keys: [...legacyKeys, "repositories.window.url"] });
+  assert.equal(app.locals.kernel.store.getSetting(windowGrantMarker), sha(options.updaterMachineToken));
+
+  // An explicit later removal is not silently reversed on another restart.
+  app.locals.kernel.store.setSetting(PRINCIPALS_SETTING, JSON.stringify([{ ...migrated, allowed_keys: legacyKeys }]));
+  app.locals.kernel.close();
+  app = createKernelApp(options);
+  assert.deepEqual(principal(app).allowed_keys, legacyKeys);
+});
+
+test("legacy migration does not expand a customized or disabled Updater principal", async t => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "kernel-window-restricted-"));
+  const options = { dataDir: directory, defaultsDir: path.resolve("data/defaults"), distDir: path.join(directory, "none"),
+    accessKey: "operator", sessionSecret: "s".repeat(40), apiToken: "legacy-" + "l".repeat(32),
+    updaterMachineToken: "machine-" + "m".repeat(32), updaterHostID: host, diskPath: directory };
+  let app = createKernelApp(options);
+  t.after(() => { app.locals.kernel.close(); rmSync(directory, { recursive: true, force: true }); });
+  const original = JSON.parse(app.locals.kernel.store.getSetting(PRINCIPALS_SETTING))[0];
+  app.locals.kernel.store.setSetting(PRINCIPALS_SETTING, JSON.stringify([{
+    ...original, enabled: false, allowed_keys: ["repositories.updater.url"],
+  }]));
+  app.locals.kernel.store.setSetting("updater_machine_window_grant_v1_" + host, "");
+  app.locals.kernel.close();
+  app = createKernelApp(options);
+  const restricted = JSON.parse(app.locals.kernel.store.getSetting(PRINCIPALS_SETTING))[0];
+  assert.equal(restricted.enabled, false);
+  assert.deepEqual(restricted.allowed_keys, ["repositories.updater.url"]);
+
+  // A deliberately narrowed, still enabled principal is likewise untouched.
+  app.locals.kernel.store.setSetting(PRINCIPALS_SETTING, JSON.stringify([{ ...restricted, enabled: true }]));
+  app.locals.kernel.store.setSetting("updater_machine_window_grant_v1_" + host, "");
+  app.locals.kernel.close();
+  app = createKernelApp(options);
+  assert.deepEqual(JSON.parse(app.locals.kernel.store.getSetting(PRINCIPALS_SETTING))[0].allowed_keys,
+    ["repositories.updater.url"]);
+});

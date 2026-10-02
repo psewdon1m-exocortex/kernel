@@ -459,16 +459,29 @@ export function createKernelApp(options) {
 		const token_sha256 = createHash("sha256").update(updaterMachineToken).digest("hex");
 		const id = "updater_" + updaterHostID;
 		const marker = "updater_machine_bootstrap_" + updaterHostID;
+		const windowGrantMarker = "updater_machine_window_grant_v1_" + updaterHostID;
+		const legacyKeys = ["repositories.updater.url", "repositories.neptune.url", "repositories.gryphon.url", "repositories.wyvern.url"];
 		const principal = { id, token_sha256, enabled: true,
-			allowed_keys: ["repositories.updater.url", "repositories.neptune.url", "repositories.gryphon.url", "repositories.wyvern.url"],
+			allowed_keys: [...legacyKeys, "repositories.window.url"],
 			wyvern_enroll: { instance_id: updaterHostID, host_id: updaterHostID } };
 		const current = loadPrincipals(store);
 		const existing = current.find(item => item.id === id);
 		const provisioned = store.getSetting(marker);
 		if (provisioned && provisioned !== token_sha256 || existing && existing.token_sha256 !== token_sha256) throw new Error("Updater machine identity changed; explicit migration is required");
+		// Upgrade only the original bootstrap grant, once. An operator-edited or
+		// revoked principal must never regain a key after a later restart.
+		const migrateWindowGrant = existing && provisioned === token_sha256 &&
+			!store.getSetting(windowGrantMarker) && existing.enabled &&
+			existing.allowed_keys.length === legacyKeys.length &&
+			legacyKeys.every(key => existing.allowed_keys.includes(key)) &&
+			existing.wyvern_enroll?.instance_id === updaterHostID &&
+			existing.wyvern_enroll?.host_id === updaterHostID;
 		store.transaction(() => {
 			if (!existing && !provisioned) store.setSetting(PRINCIPALS_SETTING, JSON.stringify(validatePrincipals([...current, principal])));
+			if (migrateWindowGrant) store.setSetting(PRINCIPALS_SETTING, JSON.stringify(validatePrincipals(current.map(item =>
+				item.id === id ? { ...item, allowed_keys: [...item.allowed_keys, "repositories.window.url"] } : item))));
 			if (!provisioned) store.setSetting(marker, token_sha256);
+			if (!store.getSetting(windowGrantMarker)) store.setSetting(windowGrantMarker, token_sha256);
 		});
 	}
   const storedVoltConnection = store.getVoltConnectionSettings();
