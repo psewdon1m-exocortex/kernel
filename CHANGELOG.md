@@ -4,6 +4,13 @@ This document specializes [Part 00 — system unification specification](https:/
 
 ## Unreleased
 
+## 0.3.9
+
+- Refresh the Kernel atom logo and transparent application icon, retaining the
+  original artwork in the source asset directory.
+- Update production dependency pins to clear the current high-severity audit
+  gate without changing the Excalidraw integration contract.
+
 ## 0.3.8
 
 - Grant Updater's host machine principal access to the Window release source on
