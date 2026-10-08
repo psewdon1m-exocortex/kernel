@@ -527,3 +527,9 @@ strong, b, .metric-main, .section-title { font-weight: 700; }
 [data-settings-section="backup"] .backup-neptune-group > :is(.backup-link-action,.backup-unlink-action) { width:280px; margin-top:20px; }
 [data-settings-section="backup"] .backup-unlink-action { color:var(--danger) !important; border-color:var(--danger) !important; }
 [data-settings-section="backup"] .backup-unlink-action:disabled { opacity:1; }
+.outdoor-tokens form { display:flex; align-items:end; flex-wrap:wrap; gap:12px; margin:16px 0; }
+.outdoor-tokens form label { display:grid; gap:7px; flex:1; min-width:180px; }
+.outdoor-token { display:flex; align-items:center; flex-wrap:wrap; gap:12px; padding:16px 0; border-top:1px solid var(--line-inner); }
+.outdoor-token strong { overflow-wrap:anywhere; }
+.outdoor-token .dialog-actions { margin-left:auto; }
+@media (max-width:600px) { .outdoor-tokens form > button,.outdoor-token .dialog-actions { width:100%; } }

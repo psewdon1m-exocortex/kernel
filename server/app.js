@@ -23,6 +23,7 @@ import { createServiceStatusCollector, SERVICE_STATUS_DEFINITIONS } from "./serv
 import { KernelStore } from "./store.js";
 import { authenticatePrincipal, assertResolveAllowed, loadPrincipals, validatePrincipals, PRINCIPALS_SETTING } from "./machine-principals.js";
 import { mountWyvern } from "./wyvern.js";
+import { mountOutdoorTokens } from "./outdoor-tokens.js";
 import { inspectRegisterProfile, inspectResolvedProfile, validateProfileBindings } from "./register-profile.js";
 import {
   CONSTITUTION_MEDIA_TYPE,
@@ -689,6 +690,7 @@ export function createKernelApp(options) {
         "This endpoint is available to internal services only.",
       );
     }
+    if (req.auth.principal?.profile === "outdoor" && !(req.method === "POST" && req.path === "/api/v1/register/resolve")) return machineError(req, res, 403, "OUTDOOR_SCOPE_DENIED", "Outdoor services may resolve only approved discovery keys.");
     res.setHeader("Cache-Control", "no-store, private");
     res.setHeader("Pragma", "no-cache");
     next();
@@ -907,6 +909,7 @@ export function createKernelApp(options) {
       const values = {};
       for (const [key, storedValue] of selected) {
         const resolved = volt.values[storedValue];
+        if (req.auth.principal?.profile === "outdoor" && resolved.visibility === "secret") return machineError(req, res, 403, "OUTDOOR_SECRET_DENIED", "Outdoor discovery cannot return secret values.");
         if (Object.hasOwn(expectedVolt, key) && resolved.revision !== expectedVolt[key]) {
           return machineError(req, res, 409, "VOLT_REVISION_CONFLICT", "A resolved value changed; reload the complete configuration.");
         }
@@ -1122,6 +1125,7 @@ export function createKernelApp(options) {
   });
 
   mountWyvern(app, { store, activeVoltClient, requireMachine, legacyToken: apiToken });
+  mountOutdoorTokens(app, { store, requireOperator });
 
   app.put("/api/machine-principals/:id", requireOperator, (req, res, next) => {
     try {

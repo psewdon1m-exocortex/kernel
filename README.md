@@ -1,5 +1,9 @@
 # Exocortex Kernel
 
+## Outdoor service tokens · Pluto
+
+Settings → Security provides individually named Outdoor service tokens, disclosed once on creation or rotation. These external credentials can resolve only `services.saturn.sni`, `services.saturn.port` and `repositories.pluto.url` through `POST /api/v1/register/resolve`. Secret values, full Register/Constitution access, operator APIs and internal machine control are denied. Revoke and rotation invalidate the former token immediately; Saturn folder access remains a separate pipeline capability. Configure the three non-secret Register values through the existing Volt reference workflow before enrolling Pluto.
+
 > Documentation authority: the workspace-wide [Part 00](https://github.com/psewdon1m-exocortex/general/blob/main/PART_00_SYSTEM_UNIFICATION_SPECIFICATION.md)
 > and its applicable Parts are normative. This repository documents
 > Kernel-specific details only; a conflict is corrected here and a material

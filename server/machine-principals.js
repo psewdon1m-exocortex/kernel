@@ -5,17 +5,21 @@ const KEY = /^[A-Za-z0-9][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)*$/;
 const HASH = /^[a-f0-9]{64}$/;
 const invalid = () => Object.assign(new Error("Invalid machine principal configuration"), { status: 400, code: "MACHINE_PRINCIPAL_INVALID" });
 export const PRINCIPALS_SETTING = "machine_principals_v1";
+export const OUTDOOR_KEYS = ["services.saturn.sni", "services.saturn.port", "repositories.pluto.url"];
 
 export function validatePrincipals(input) {
   if (!Array.isArray(input) || input.length > 256) throw invalid();
   const ids = new Set(), hashes = new Set();
   for (const item of input) {
-    if (!item || Object.keys(item).some(key => !["id", "token_sha256", "allowed_keys", "enabled", "wyvern", "wyvern_enroll"].includes(key)) ||
+    if (!item || Object.keys(item).some(key => !["id", "token_sha256", "allowed_keys", "enabled", "wyvern", "wyvern_enroll", "profile", "name"].includes(key)) ||
         !ID.test(item.id) || !HASH.test(item.token_sha256) || typeof item.enabled !== "boolean" ||
         !Array.isArray(item.allowed_keys) || item.allowed_keys.length > 128 ||
         item.allowed_keys.some(key => typeof key !== "string" || key.length > 128 || !KEY.test(key)) ||
         new Set(item.allowed_keys).size !== item.allowed_keys.length || ids.has(item.id) || hashes.has(item.token_sha256)) throw invalid();
     ids.add(item.id); hashes.add(item.token_sha256);
+    if (item.profile !== undefined && item.profile !== "outdoor") throw invalid();
+    if (item.name !== undefined && (typeof item.name !== "string" || !item.name.trim() || item.name.length > 80 || /[\r\n\x00]/.test(item.name))) throw invalid();
+    if (item.profile === "outdoor" && (item.wyvern !== undefined || item.wyvern_enroll !== undefined || item.allowed_keys.some(key => !OUTDOOR_KEYS.includes(key)))) throw invalid();
     if (item.wyvern !== undefined && (!item.wyvern || Object.keys(item.wyvern).some(key => !["instance_id", "role"].includes(key)) ||
         !ID.test(item.wyvern.instance_id) || !["manager", "runtime"].includes(item.wyvern.role))) throw invalid();
     if (item.wyvern_enroll !== undefined && (!item.wyvern_enroll || Object.keys(item.wyvern_enroll).some(key => !["instance_id", "host_id"].includes(key)) ||

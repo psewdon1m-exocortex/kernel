@@ -1,4 +1,5 @@
 import { ServiceLogsPanel } from "./ServiceLogsPanel";
+import { OutdoorTokensPanel } from "./OutdoorTokensPanel";
 import { openKernelUpdates } from "./update-flow.js";
 import { openAgentInitialization, confirmAgentAction, type InitializationJob } from "./agent-initialize.js";
 import { BackupPolicyPanel } from "./service-agents";
@@ -1098,6 +1099,7 @@ export function SettingsPage({
 
     if (id === "security") return (
       <div className="settings-content security-content">
+        <OutdoorTokensPanel />
         <div className="settings-group">
           <h3>Changing Access Key</h3>
           <p>Changing the Access Key revokes every other active browser session.</p>
