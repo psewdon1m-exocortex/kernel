@@ -4,6 +4,13 @@ This document specializes [Part 00 — system unification specification](https:/
 
 ## Unreleased
 
+## 0.3.10
+
+- Add scoped Outdoor access-token lifecycle management while preserving
+  internal service isolation and explicit revocation.
+- Pin the published Updater 0.6.13 and Neptune 0.1.13 host-helper artifacts.
+- Override vulnerable transitive frontend dependencies with patched versions.
+
 ## 0.3.9
 
 - Refresh the Kernel atom logo and transparent application icon, retaining the
